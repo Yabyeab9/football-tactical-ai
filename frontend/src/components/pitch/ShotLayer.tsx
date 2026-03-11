@@ -1,33 +1,29 @@
-type Shot = {
-  x: number
-  y: number
-  xg: number
-  result: "goal" | "miss" | "save"
-}
+export default function ShotLayer() {
 
-export default function ShotLayer({ shots }: { shots: Shot[] }) {
+  const shots = [
+    { x: 90, y: 40 },
+    { x: 85, y: 50 }
+  ]
 
   return (
 
-    <g>
+    <>
 
-      {shots.map((shot, index) => (
+      {shots.map((s, i) => (
 
-        <circle
-  cx={shot.x}
-  cy={shot.y}
-  r={shot.xg * 4}
-  fill={shot.result === "goal" ? "lime" : "red"}
-  opacity="0.7"
->
-  <title>
-    xG: {shot.xg} | Result: {shot.result}
-  </title>
-</circle>
+        <div
+          key={i}
+          className="absolute w-3 h-3 bg-red-500 rounded-full"
+          style={{
+            left: `${s.x}%`,
+            top: `${s.y}%`,
+            transform: "translate(-50%, -50%)"
+          }}
+        />
 
       ))}
 
-    </g>
+    </>
 
   )
 

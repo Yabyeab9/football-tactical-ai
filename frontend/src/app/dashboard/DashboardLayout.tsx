@@ -1,30 +1,24 @@
-"use client"
-
 import Sidebar from "./Sidebar"
 import Topbar from "./Topbar"
 
 export default function DashboardLayout({ children }: any) {
-
   return (
+    <div className="flex h-screen bg-[#0b1120] text-white">
 
-    <div className="flex h-screen bg-slate-950 text-white">
-
+      {/* Sidebar */}
       <Sidebar />
 
-      <div className="flex-1 flex flex-col">
+      {/* Main area */}
+      <div className="flex flex-col flex-1">
 
         <Topbar />
 
         <main className="p-6 overflow-y-auto">
-
           {children}
-
         </main>
 
       </div>
 
     </div>
-
   )
-
 }

@@ -1,43 +1,37 @@
-"use client"
-
 import PitchLines from "./PitchLines"
+import PitchPlayer from "./PitchPlayer"
+import PassNetworkLayer from "./PassNetworkLayer"
+import HeatmapLayer from "./HeatmapLayer"
+import ShotLayer from "./ShotLayer"
+import SequenceLayer from "./SequenceLayer"
 
-export default function FootballPitch({ children }) {
+export default function FootballPitch() {
+
+  const players = [
+    { id: 1, x: 30, y: 40 },
+    { id: 2, x: 50, y: 30 },
+    { id: 3, x: 70, y: 60 },
+  ]
 
   return (
 
-    <div className="bg-slate-900 rounded-xl p-4 shadow-2xl border border-slate-700">
+    <div className="relative w-full h-[500px] bg-green-700 rounded-xl overflow-hidden">
 
-      <svg
-        viewBox="0 0 120 80"
-        className="w-full h-[500px]"
-      >
+      <PitchLines />
 
-        <PitchLines />
+      <HeatmapLayer />
 
-        {children}
-<defs>
+      <PassNetworkLayer />
 
-  <marker
-    id="arrow"
-    viewBox="0 0 10 10"
-    refX="10"
-    refY="5"
-    markerWidth="4"
-    markerHeight="4"
-    orient="auto-start-reverse"
-  >
+      <ShotLayer />
 
-    <path d="M 0 0 L 10 5 L 0 10 z" fill="cyan" />
+      <SequenceLayer />
 
-  </marker>
-
-</defs>
-
-      </svg>
+      {players.map((p) => (
+        <PitchPlayer key={p.id} x={p.x} y={p.y} />
+      ))}
 
     </div>
 
   )
-
 }

@@ -1,14 +1,14 @@
-export default function PitchPlayer({ x, y, color="red" }) {
+export default function PitchPlayer({ x, y }: any) {
 
   return (
 
-    <circle
-      cx={x}
-      cy={y}
-      r="1.5"
-      fill={color}
-      stroke="white"
-      strokeWidth="0.2"
+    <div
+      className="absolute w-4 h-4 bg-blue-500 rounded-full border border-white"
+      style={{
+        left: `${x}%`,
+        top: `${y}%`,
+        transform: "translate(-50%, -50%)"
+      }}
     />
 
   )

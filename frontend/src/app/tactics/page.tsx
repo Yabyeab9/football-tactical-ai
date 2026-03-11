@@ -1,10 +1,10 @@
-import FootballPitch from "@/components/pitch/FootballPitch"
-import PitchPlayer from "@/components/pitch/PitchPlayer"
-import ShotLayer from "@/components/pitch/ShotLayer"
-import PassNetworkLayer from "@/components/pitch/PassNetworkLayer"
-import HeatmapLayer from "@/components/pitch/HeatmapLayer"
-import SequenceLayer from "@/components/pitch/SequenceLayer"
-import MatchTimeline from "@/components/timeline/MatchTimeline"
+import FootballPitch from "../../components/pitch/FootballPitch"
+import PitchPlayer from "../../components/pitch/PitchPlayer"
+import ShotLayer from "../../components/pitch/ShotLayer"
+import PassNetworkLayer from "../../components/pitch/PassNetworkLayer"
+import HeatmapLayer from "../../components/pitch/HeatmapLayer"
+import SequenceLayer from "../../components/pitch/SequenceLayer"
+import MatchTimeline from "../../components/timeline/MatchTimeline"
 
 const shots = [
   { x: 90, y: 40, xg: 0.2 },

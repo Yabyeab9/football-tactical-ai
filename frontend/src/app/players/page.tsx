@@ -1,4 +1,4 @@
-import PlayerRadarComparison from "@/components/analytics/PlayerRadarComparison"
+import PlayerRadarComparison from "../../components/analytics/PlayerRadarComparison"
 
 export default function Players() {
 

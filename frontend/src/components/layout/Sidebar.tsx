@@ -1,6 +1,4 @@
-"use client"
-
-import Link from "next/link"
+import { Link } from "react-router-dom";
 
 export default function Sidebar() {
   return (
@@ -12,22 +10,22 @@ export default function Sidebar() {
 
       <nav className="flex flex-col gap-4">
 
-        <Link href="/dashboard">Dashboard</Link>
+        <Link to="/dashboard">Dashboard</Link>
 
-        <Link href="/matches">Matches</Link>
+        <Link to="/matches">Matches</Link>
 
-        <Link href="/teams">Teams</Link>
+        <Link to="/teams">Teams</Link>
 
-        <Link href="/players">Players</Link>
+        <Link to="/players">Players</Link>
 
-        <Link href="/tactics">Tactical Lab</Link>
+        <Link to="/tactics">Tactical Lab</Link>
 
-        <Link href="/scouting">Scouting</Link>
+        <Link to="/scouting">Scouting</Link>
 
-        <Link href="/ai-assistant">AI Assistant</Link>
+        <Link to="/ai-assistant">AI Assistant</Link>
 
       </nav>
 
     </div>
-  )
+  );
 }
