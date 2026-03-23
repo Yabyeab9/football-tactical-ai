@@ -114,9 +114,9 @@ export default function MatchDetail() {
                   <Users className="h-5 w-5 text-muted-foreground" />
                   <h2 className="text-2xl font-bold">{match.home_team?.team_name}</h2>
                 </div>
-                {match.home_team_manager && (
+                  {match.home_team?.managers?.[0]?.name && (
                   <p className="text-sm text-muted-foreground">
-                    Manager: {match.home_team_manager}
+                    Manager: a
                   </p>
                 )}
                 <div className="text-6xl font-bold mt-4">{match.home_score}</div>
