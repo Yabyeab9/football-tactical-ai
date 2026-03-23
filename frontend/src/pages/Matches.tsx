@@ -67,7 +67,7 @@ export default function Matches() {
           if (!Number.isNaN(max)) filters.max_goals = max;
         }
 
-        const data = await getMatches(50, 0, filters);
+        const data = await getMatches(5, 0, filters);
         setMatches(data);
       } catch (error) {
         console.error('Error loading matches:', error);

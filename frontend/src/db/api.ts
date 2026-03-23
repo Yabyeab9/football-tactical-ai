@@ -60,81 +60,107 @@ export async function getTeamById(teamId: number) {
 }
 
 // Matches API
-export async function getMatches(limit = 50, offset = 0, filters?: {
-  competition_id?: number;
-  team_id?: number;
-  season_name?: string;
-  sort_by?: 'date' | 'competition' | 'match_week' | 'goals';
-  sort_order?: 'asc' | 'desc';
-  min_goals?: number;
-  max_goals?: number;
-}) {
-  let query = supabase
-    .from('matches')
-    .select(`
-      *,
-      home_team:teams!matches_home_team_id_fkey(team_id, team_name, country),
-      away_team:teams!matches_away_team_id_fkey(team_id, team_name, country),
-      competition:competitions(competition_id, competition_name, season_name)
-    `);
-
-  // Apply filters
-  if (filters?.competition_id) {
-    query = query.eq('competition_id', filters.competition_id);
+export async function getMatches(
+  limit = 50,
+  offset = 0,
+  filters?: {
+    competition_id?: number;
+    team_id?: number;
+    season_name?: string;
+    sort_by?: 'date' | 'competition' | 'match_week' | 'goals';
+    sort_order?: 'asc' | 'desc';
+    min_goals?: number;
+    max_goals?: number;
   }
+) {
+  try {
+    const modules = import.meta.glob('/src/data/matches/*/*.json');
 
-  if (filters?.team_id) {
-    query = query.or(`home_team_id.eq.${filters.team_id},away_team_id.eq.${filters.team_id}`);
-  }
+    const allMatches: any[] = [];
 
-  if (filters?.season_name) {
-    query = query.eq('season_name', filters.season_name);
-  }
+    // load all files
+    for (const path in modules) {
+      const mod: any = await modules[path]();
+      const data = mod.default;
 
-  if (filters?.min_goals !== undefined) {
-    query = query.gte('home_score', 0).gte('away_score', 0);
-  }
+      // some files are arrays, some single object
+      if (Array.isArray(data)) {
+        allMatches.push(...data);
+      } else {
+        allMatches.push(data);
+      }
+    }
 
-  // Apply sorting
-  const sortOrder = filters?.sort_order === 'asc' ? { ascending: true } : { ascending: false };
+    let matches = allMatches;
 
-  switch (filters?.sort_by) {
-    case 'date':
-      query = query.order('match_date', sortOrder);
-      break;
-    case 'competition':
-      query = query.order('competition_id', sortOrder);
-      break;
-    case 'match_week':
-      query = query.order('match_week', sortOrder);
-      break;
-    case 'goals':
-      // Sort by total goals (home_score + away_score)
-      query = query.order('home_score', sortOrder).order('away_score', sortOrder);
-      break;
-    default:
-      query = query.order('match_date', { ascending: false });
-  }
+    // ✅ filtering
+    if (filters?.competition_id) {
+      matches = matches.filter(m => m.competition?.competition_id === filters.competition_id);
+    }
 
-  query = query.range(offset, offset + limit - 1);
+    if (filters?.team_id) {
+      matches = matches.filter(
+        m =>
+          m.home_team?.home_team_id === filters.team_id ||
+          m.away_team?.away_team_id === filters.team_id
+      );
+    }
 
-  const { data, error } = await query;
+    if (filters?.season_name) {
+      matches = matches.filter(m => m.season?.season_name === filters.season_name);
+    }
 
-  if (error) throw error;
+    // ✅ goal filter
+    if (filters?.min_goals !== undefined || filters?.max_goals !== undefined) {
+      matches = matches.filter(m => {
+        const total = (m.home_score || 0) + (m.away_score || 0);
+        if (filters.min_goals !== undefined && total < filters.min_goals) return false;
+        if (filters.max_goals !== undefined && total > filters.max_goals) return false;
+        return true;
+      });
+    }
 
-  let matches = (Array.isArray(data) ? data : []) as Match[];
+    // ✅ sorting
+    const asc = filters?.sort_order === 'asc';
 
-  // Filter by goal range if specified
-  if (filters?.min_goals !== undefined || filters?.max_goals !== undefined) {
-    matches = matches.filter(match => {
-      const totalGoals = match.home_score + match.away_score;
-      if (filters.min_goals !== undefined && totalGoals < filters.min_goals) return false;
-      if (filters.max_goals !== undefined && totalGoals > filters.max_goals) return false;
-      return true;
+    matches.sort((a, b) => {
+      switch (filters?.sort_by) {
+        case 'competition':
+          return asc
+            ? a.competition?.competition_id - b.competition?.competition_id
+            : b.competition?.competition_id - a.competition?.competition_id;
+
+        case 'match_week':
+          return asc ? a.match_week - b.match_week : b.match_week - a.match_week;
+
+        case 'goals':
+          const gA = (a.home_score || 0) + (a.away_score || 0);
+          const gB = (b.home_score || 0) + (b.away_score || 0);
+          return asc ? gA - gB : gB - gA;
+
+        case 'date':
+        default:
+          return asc
+            ? new Date(a.match_date).getTime() - new Date(b.match_date).getTime()
+            : new Date(b.match_date).getTime() - new Date(a.match_date).getTime();
+      }
     });
-  }
+    const formatted = matches.map(match => ({
+      match_id: match.match_id,
+      home_team: { team_name: match.home_team?.home_team_name },
+      away_team: { team_name: match.away_team?.away_team_name },
+      match_date: match.match_date,
+      home_score: match.home_score,
+      away_score: match.away_score,
+      competition: match.competition,
+    }));
 
-  return matches;
+    return formatted.slice(offset, offset + limit);
+
+  } catch (err) {
+    console.error("Failed to load matches:", err);
+    return [];
+  }
 }
 
 export async function getMatchById(matchId: number) {
