@@ -11,6 +11,10 @@ import {
   Settings,
   Menu,
   Activity,
+  AlertTriangle,
+  Shield,
+  Brain,
+  Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -22,6 +26,10 @@ const navigation = [
   { name: 'Matches', href: '/matches', icon: Activity },
   { name: 'Teams', href: '/teams', icon: Users },
   { name: 'Players', href: '/players', icon: UserCircle },
+  { name: 'Injury Analysis', href: '/injury-analysis', icon: AlertTriangle },
+  { name: 'Manager Analysis', href: '/manager-analysis', icon: Shield },
+  { name: 'AI Predictions', href: '/ai-predictions', icon: Brain },
+  { name: 'Undiscovered Insights', href: '/undiscovered-insights', icon: Sparkles },
   { name: 'Tactical Lab', href: '/tactical-lab', icon: Target },
   { name: 'Scouting', href: '/scouting', icon: Search },
   { name: 'AI Assistant', href: '/ai-assistant', icon: Bot },

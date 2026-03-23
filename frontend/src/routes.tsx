@@ -1,7 +1,12 @@
 import Dashboard from './pages/Dashboard';
 import Matches from './pages/Matches';
+import MatchDetail from './pages/MatchDetail';
 import Teams from './pages/Teams';
 import Players from './pages/Players';
+import InjuryAnalysis from './pages/InjuryAnalysis';
+import ManagerAnalysis from './pages/ManagerAnalysis';
+import AIPredictions from './pages/AIPredictions';
+import UndiscoveredInsights from './pages/UndiscoveredInsights';
 import TacticalLab from './pages/TacticalLab';
 import Scouting from './pages/Scouting';
 import AIAssistant from './pages/AIAssistant';
@@ -29,6 +34,12 @@ const routes: RouteConfig[] = [
     element: <Matches />,
   },
   {
+    name: 'Match Detail',
+    path: '/matches/:matchId',
+    element: <MatchDetail />,
+
+  },
+  {
     name: 'Teams',
     path: '/teams',
     element: <Teams />,
@@ -37,6 +48,26 @@ const routes: RouteConfig[] = [
     name: 'Players',
     path: '/players',
     element: <Players />,
+  },
+  {
+    name: 'Injury Analysis',
+    path: '/injury-analysis',
+    element: <InjuryAnalysis />,
+  },
+  {
+    name: 'Manager Analysis',
+    path: '/manager-analysis',
+    element: <ManagerAnalysis />,
+  },
+  {
+    name: 'AI Predictions',
+    path: '/ai-predictions',
+    element: <AIPredictions />,
+  },
+  {
+    name: 'Undiscovered Insights',
+    path: '/undiscovered-insights',
+    element: <UndiscoveredInsights />,
   },
   {
     name: 'Tactical Lab',

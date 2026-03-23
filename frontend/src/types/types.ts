@@ -31,6 +31,12 @@ export interface Match {
   stadium: string | null;
   referee: string | null;
   match_status: string;
+  kick_off: string | null;
+  match_week: number | null;
+  competition_stage: string | null;
+  season_name: string | null;
+  home_team_manager: string | null;
+  away_team_manager: string | null;
   created_at: string;
   home_team?: Team;
   away_team?: Team;
@@ -158,3 +164,99 @@ export interface PlayerComparison {
     [key: string]: number;
   };
 }
+
+// Advanced Analytics Types
+export interface Manager {
+  id: number;
+  manager_id: number;
+  manager_name: string;
+  nationality: string | null;
+  date_of_birth: string | null;
+  coaching_style: string | null;
+  preferred_formation: string | null;
+  created_at: string;
+}
+
+export interface ManagerPerformance {
+  id: number;
+  manager_id: number | null;
+  team_id: number | null;
+  season_id: number;
+  competition_id: number | null;
+  matches_managed: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  points_per_game: number | null;
+  goals_scored: number;
+  goals_conceded: number;
+  final_position: number | null;
+  points_from_relegation: number | null;
+  is_relegation_battle: boolean;
+  survival_success: boolean | null;
+  epl_specialist: boolean;
+  created_at: string;
+  manager?: Manager;
+  team?: Team;
+  competition?: Competition;
+}
+
+export interface Injury {
+  id: number;
+  player_id: number | null;
+  injury_type: string;
+  injury_severity: string | null;
+  injury_date: string;
+  expected_return_date: string | null;
+  actual_return_date: string | null;
+  days_out: number | null;
+  matches_missed: number;
+  body_part: string | null;
+  recurring: boolean;
+  created_at: string;
+  player?: Player;
+}
+
+export interface AIPrediction {
+  id: number;
+  prediction_type: string;
+  entity_type: string;
+  entity_id: number;
+  prediction_value: number | null;
+  confidence_score: number | null;
+  prediction_date: string;
+  actual_value: number | null;
+  accuracy: number | null;
+  model_version: string | null;
+  features: Record<string, unknown> | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface UndiscoveredMetric {
+  id: number;
+  metric_name: string;
+  metric_category: string;
+  entity_type: string;
+  entity_id: number;
+  metric_value: number | null;
+  percentile: number | null;
+  season_id: number | null;
+  calculation_method: string | null;
+  insights: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface InjuryRiskAssessment {
+  player_id: number;
+  player_name: string;
+  total_injuries: number;
+  recurring_injuries: number;
+  total_days_out: number;
+  total_matches_missed: number;
+  injury_risk_score: number;
+  most_common_injury: string;
+  last_injury_date: string | null;
+}
+

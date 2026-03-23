@@ -7,6 +7,12 @@ import type {
   Event,
   TacticalMetric,
   PlayerStats,
+  Manager,
+  ManagerPerformance,
+  Injury,
+  InjuryRiskAssessment,
+  AIPrediction,
+  UndiscoveredMetric,
 } from '@/types';
 
 // Competitions API
@@ -54,36 +60,118 @@ export async function getTeamById(teamId: number) {
 }
 
 // Matches API
-export async function getMatches(limit = 50, offset = 0) {
-  const { data, error } = await supabase
+export async function getMatches(limit = 50, offset = 0, filters?: {
+  competition_id?: number;
+  team_id?: number;
+  season_name?: string;
+  sort_by?: 'date' | 'competition' | 'match_week' | 'goals';
+  sort_order?: 'asc' | 'desc';
+  min_goals?: number;
+  max_goals?: number;
+}) {
+  let query = supabase
     .from('matches')
     .select(`
       *,
       home_team:teams!matches_home_team_id_fkey(team_id, team_name, country),
       away_team:teams!matches_away_team_id_fkey(team_id, team_name, country),
       competition:competitions(competition_id, competition_name, season_name)
-    `)
-    .order('match_date', { ascending: false })
-    .range(offset, offset + limit - 1);
+    `);
+
+  // Apply filters
+  if (filters?.competition_id) {
+    query = query.eq('competition_id', filters.competition_id);
+  }
+
+  if (filters?.team_id) {
+    query = query.or(`home_team_id.eq.${filters.team_id},away_team_id.eq.${filters.team_id}`);
+  }
+
+  if (filters?.season_name) {
+    query = query.eq('season_name', filters.season_name);
+  }
+
+  if (filters?.min_goals !== undefined) {
+    query = query.gte('home_score', 0).gte('away_score', 0);
+  }
+
+  // Apply sorting
+  const sortOrder = filters?.sort_order === 'asc' ? { ascending: true } : { ascending: false };
+
+  switch (filters?.sort_by) {
+    case 'date':
+      query = query.order('match_date', sortOrder);
+      break;
+    case 'competition':
+      query = query.order('competition_id', sortOrder);
+      break;
+    case 'match_week':
+      query = query.order('match_week', sortOrder);
+      break;
+    case 'goals':
+      // Sort by total goals (home_score + away_score)
+      query = query.order('home_score', sortOrder).order('away_score', sortOrder);
+      break;
+    default:
+      query = query.order('match_date', { ascending: false });
+  }
+
+  query = query.range(offset, offset + limit - 1);
+
+  const { data, error } = await query;
 
   if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Match[];
+
+  let matches = (Array.isArray(data) ? data : []) as Match[];
+
+  // Filter by goal range if specified
+  if (filters?.min_goals !== undefined || filters?.max_goals !== undefined) {
+    matches = matches.filter(match => {
+      const totalGoals = match.home_score + match.away_score;
+      if (filters.min_goals !== undefined && totalGoals < filters.min_goals) return false;
+      if (filters.max_goals !== undefined && totalGoals > filters.max_goals) return false;
+      return true;
+    });
+  }
+
+  return matches;
 }
 
 export async function getMatchById(matchId: number) {
-  const { data, error } = await supabase
-    .from('matches')
-    .select(`
-      *,
-      home_team:teams!matches_home_team_id_fkey(team_id, team_name, country),
-      away_team:teams!matches_away_team_id_fkey(team_id, team_name, country),
-      competition:competitions(competition_id, competition_name, season_name)
-    `)
-    .eq('match_id', matchId)
-    .maybeSingle();
+  try {
+    const modules = import.meta.glob('/src/data/matches/**/*.json');
 
-  if (error) throw error;
-  return data as Match | null;
+    // Loop through all files
+    for (const path in modules) {
+      const mod: any = await modules[path]();
+      const data = mod.default;
+
+      // Find the match inside this file
+      const match = data.find((m: any) => m.match_id === matchId);
+
+      if (match) {
+        // ✅ Format same as your list view
+        return {
+          match_id: match.match_id,
+          home_team: { team_name: match.home_team?.home_team_name },
+          away_team: { team_name: match.away_team?.away_team_name },
+          match_date: match.match_date,
+          home_score: match.home_score,
+          away_score: match.away_score,
+          stadium: match.stadium?.name,
+          kick_off: match.kick_off,
+          competition: match.competition?.competition_name,
+        };
+      }
+    }
+
+    // Not found
+    return null;
+
+  } catch (err) {
+    console.error("Failed to load match:", err);
+    return null;
+  }
 }
 
 export async function getMatchesByCompetition(competitionId: number) {
@@ -256,7 +344,7 @@ export async function getPlayerStatsByPlayer(playerId: number) {
 
 export async function getAggregatedPlayerStats(playerId: number) {
   const stats = await getPlayerStatsByPlayer(playerId);
-  
+
   if (stats.length === 0) return null;
 
   const aggregated = stats.reduce((acc, stat) => ({
@@ -291,31 +379,243 @@ export async function getAggregatedPlayerStats(playerId: number) {
 
   return {
     ...aggregated,
-    pass_completion_rate: aggregated.total_passes_attempted > 0 
-      ? (aggregated.total_passes_completed / aggregated.total_passes_attempted) * 100 
+    pass_completion_rate: aggregated.total_passes_attempted > 0
+      ? (aggregated.total_passes_completed / aggregated.total_passes_attempted) * 100
       : 0,
-    shot_accuracy: aggregated.total_shots > 0 
-      ? (aggregated.total_shots_on_target / aggregated.total_shots) * 100 
+    shot_accuracy: aggregated.total_shots > 0
+      ? (aggregated.total_shots_on_target / aggregated.total_shots) * 100
       : 0,
-    pressure_success_rate: aggregated.total_pressures > 0 
-      ? (aggregated.total_successful_pressures / aggregated.total_pressures) * 100 
+    pressure_success_rate: aggregated.total_pressures > 0
+      ? (aggregated.total_successful_pressures / aggregated.total_pressures) * 100
       : 0,
   };
 }
 
 // Dashboard API
 export async function getDashboardStats() {
-  const [competitions, teams, matches, players] = await Promise.all([
-    supabase.from('competitions').select('id', { count: 'exact', head: true }),
-    supabase.from('teams').select('id', { count: 'exact', head: true }),
-    supabase.from('matches').select('id', { count: 'exact', head: true }),
-    supabase.from('players').select('id', { count: 'exact', head: true }),
-  ]);
+  try {
+    const res = await fetch('/src/data/dashboard.json');
+    const data = await res.json();
 
-  return {
-    total_competitions: competitions.count || 0,
-    total_teams: teams.count || 0,
-    total_matches: matches.count || 0,
-    total_players: players.count || 0,
-  };
+    return {
+      total_competitions: data.total_competitions || 0,
+      total_teams: data.total_teams || 0,
+      total_matches: data.total_matches || 0,
+      total_players: data.total_players || 0,
+    };
+  } catch (err) {
+    console.error("Failed to load dashboard stats:", err);
+    return {
+      total_competitions: 0,
+      total_teams: 0,
+      total_matches: 0,
+      total_players: 0,
+    };
+  }
+
+}
+
+// Managers API
+export async function getManagers() {
+  const { data, error } = await supabase
+    .from('managers')
+    .select('*')
+    .order('manager_name');
+
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as Manager[];
+}
+
+export async function getManagerById(managerId: number) {
+  const { data, error } = await supabase
+    .from('managers')
+    .select('*')
+    .eq('manager_id', managerId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data as Manager | null;
+}
+
+export async function getManagerPerformance(managerId: number) {
+  const { data, error } = await supabase
+    .from('manager_performance')
+    .select(`
+      *,
+      manager:managers(manager_id, manager_name, nationality, coaching_style),
+      team:teams(team_id, team_name),
+      competition:competitions(competition_id, competition_name)
+    `)
+    .eq('manager_id', managerId)
+    .order('season_id', { ascending: false });
+
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as ManagerPerformance[];
+}
+
+export async function getEPLSpecialists() {
+  const { data, error } = await supabase
+    .from('manager_performance')
+    .select(`
+      *,
+      manager:managers(manager_id, manager_name, nationality, coaching_style, preferred_formation)
+    `)
+    .eq('epl_specialist', true)
+    .order('points_per_game', { ascending: false })
+    .limit(10);
+
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as ManagerPerformance[];
+}
+
+export async function getRelegationSpecialists() {
+  const { data, error } = await supabase
+    .from('manager_performance')
+    .select(`
+      *,
+      manager:managers(manager_id, manager_name, nationality, coaching_style)
+    `)
+    .eq('is_relegation_battle', true)
+    .eq('survival_success', true)
+    .order('points_from_relegation', { ascending: true })
+    .limit(10);
+
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as ManagerPerformance[];
+}
+
+// Injuries API
+export async function getInjuriesByPlayer(playerId: number) {
+  const { data, error } = await supabase
+    .from('injuries')
+    .select(`
+      *,
+      player:players(player_id, player_name, position)
+    `)
+    .eq('player_id', playerId)
+    .order('injury_date', { ascending: false });
+
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as Injury[];
+}
+
+export async function getInjuryPronePlayersAnalysis() {
+  const { data, error } = await supabase
+    .from('injuries')
+    .select(`
+      player_id,
+      player:players(player_id, player_name, position),
+      injury_type,
+      days_out,
+      matches_missed,
+      recurring,
+      injury_date
+    `)
+    .order('injury_date', { ascending: false });
+
+  if (error) throw error;
+
+  const injuryData = Array.isArray(data) ? data : [];
+
+  // Aggregate injury data by player
+  const playerInjuryMap = new Map<number, InjuryRiskAssessment>();
+
+  injuryData.forEach((injury: any) => {
+    const playerId = injury.player_id;
+    if (!playerId) return;
+
+    if (!playerInjuryMap.has(playerId)) {
+      playerInjuryMap.set(playerId, {
+        player_id: playerId,
+        player_name: injury.player?.player_name || 'Unknown',
+        total_injuries: 0,
+        recurring_injuries: 0,
+        total_days_out: 0,
+        total_matches_missed: 0,
+        injury_risk_score: 0,
+        most_common_injury: '',
+        last_injury_date: null,
+      });
+    }
+
+    const assessment = playerInjuryMap.get(playerId)!;
+    assessment.total_injuries++;
+    if (injury.recurring) assessment.recurring_injuries++;
+    assessment.total_days_out += injury.days_out || 0;
+    assessment.total_matches_missed += injury.matches_missed || 0;
+    if (!assessment.last_injury_date || injury.injury_date > assessment.last_injury_date) {
+      assessment.last_injury_date = injury.injury_date;
+    }
+  });
+
+  // Calculate risk scores
+  const assessments = Array.from(playerInjuryMap.values()).map(assessment => ({
+    ...assessment,
+    injury_risk_score: Math.min(
+      (assessment.total_injuries * 10 +
+       assessment.recurring_injuries * 15 +
+       assessment.total_matches_missed * 2) / 10,
+      10
+    ),
+  }));
+
+  return assessments.sort((a, b) => b.injury_risk_score - a.injury_risk_score);
+}
+
+// AI Predictions API
+export async function getAIPredictions(predictionType?: string) {
+  let query = supabase
+    .from('ai_predictions')
+    .select('*')
+    .order('prediction_date', { ascending: false });
+
+  if (predictionType) {
+    query = query.eq('prediction_type', predictionType);
+  }
+
+  const { data, error } = await query.limit(50);
+
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as AIPrediction[];
+}
+
+export async function getAIPredictionsByEntity(entityType: string, entityId: number) {
+  const { data, error } = await supabase
+    .from('ai_predictions')
+    .select('*')
+    .eq('entity_type', entityType)
+    .eq('entity_id', entityId)
+    .order('prediction_date', { ascending: false });
+
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as AIPrediction[];
+}
+
+// Undiscovered Metrics API
+export async function getUndiscoveredMetrics(category?: string) {
+  let query = supabase
+    .from('undiscovered_metrics')
+    .select('*')
+    .order('percentile', { ascending: false });
+
+  if (category) {
+    query = query.eq('metric_category', category);
+  }
+
+  const { data, error } = await query.limit(50);
+
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as UndiscoveredMetric[];
+}
+
+export async function getUndiscoveredMetricsByEntity(entityType: string, entityId: number) {
+  const { data, error } = await supabase
+    .from('undiscovered_metrics')
+    .select('*')
+    .eq('entity_type', entityType)
+    .eq('entity_id', entityId)
+    .order('percentile', { ascending: false });
+
+  if (error) throw error;
+  return (Array.isArray(data) ? data : []) as UndiscoveredMetric[];
 }

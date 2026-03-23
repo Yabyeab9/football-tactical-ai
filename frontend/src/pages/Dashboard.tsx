@@ -23,7 +23,7 @@ export default function Dashboard() {
       try {
         const [dashboardStats, matches] = await Promise.all([
           getDashboardStats(),
-          getMatches(5, 0),
+          getMatches(),
         ]);
         setStats(dashboardStats);
         setRecentMatches(matches);
