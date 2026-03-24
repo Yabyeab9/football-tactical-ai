@@ -162,10 +162,134 @@ export async function getMatches(
     return [];
   }
 }
+export async function getPlayerStatsByMatch(matchId: number): Promise<any[]> {
+  try {
+    const eventModules = import.meta.glob('/src/data/events/*.json');
+    const eventPath = `/src/data/events/${matchId}.json`;
 
+    if (!eventModules[eventPath]) return [];
+
+    const mod: any = await eventModules[eventPath]();
+    const events = mod.default;
+    const playerMap = new Map();
+
+    events.forEach((event: any) => {
+      const teamId = event.team?.id;
+      const player = event.player;
+
+      if (player && teamId) {
+        if (!playerMap.has(player.id)) {
+          playerMap.set(player.id, {
+            id: player.id,
+            team_id: teamId,
+            player: { player_name: player.name },
+            minutes_played: 90, // Simplified; can be refined with sub events
+            passes_attempted: 0,
+            passes_completed: 0,
+            shots: 0,
+          });
+        }
+
+        const stats = playerMap.get(player.id);
+
+        // Pass Aggregation
+        if (event.type.name === 'Pass') {
+          stats.passes_attempted++;
+          // In StatsBomb, a pass is complete if it has no 'outcome' property
+          if (!event.pass?.outcome) {
+            stats.passes_completed++;
+          }
+        }
+
+        // Shot Aggregation
+        if (event.type.name === 'Shot') {
+          stats.shots++;
+        }
+      }
+    });
+
+    return Array.from(playerMap.values());
+  } catch (err) {
+    console.error("Error fetching player stats:", err);
+    return [];
+  }
+}
+
+export async function getTacticalMetricsByMatch(matchId: number): Promise<any[]> {
+  try {
+    const eventModules = import.meta.glob('/src/data/events/*.json');
+    const eventPath = `/src/data/events/${matchId}.json`;
+
+    if (!eventModules[eventPath]) return [];
+
+    const mod: any = await eventModules[eventPath]();
+    const events = mod.default;
+
+    let teamIds: number[] = [];
+    const teamStats: Record<number, { passes: number; xG: number }> = {};
+
+    events.forEach((event: any) => {
+      const teamId = event.team?.id;
+      if (!teamId) return;
+
+      if (!teamStats[teamId]) {
+        teamStats[teamId] = { passes: 0, xG: 0 };
+        teamIds.push(teamId);
+      }
+
+      if (event.type.name === 'Pass') {
+        teamStats[teamId].passes++;
+      }
+
+      if (event.type.name === 'Shot') {
+        teamStats[teamId].xG += event.shot?.statsbomb_xg || 0;
+      }
+    });
+
+    const totalPasses = Object.values(teamStats).reduce((acc, curr) => acc + curr.passes, 0);
+    const metrics: any[] = [];
+
+    teamIds.forEach((id) => {
+      const stats = teamStats[id];
+
+      // Possession Metric
+      metrics.push({
+        id: `pos-${id}`,
+        team_id: id,
+        metric_name: 'Possession',
+        metric_type: 'control',
+        metric_value: totalPasses > 0 ? (stats.passes / totalPasses) * 100 : 0
+      });
+
+      // xG Metric
+      metrics.push({
+        id: `xg-${id}`,
+        team_id: id,
+        metric_name: 'Expected Goals (xG)',
+        metric_type: 'attack',
+        metric_value: stats.xG
+      });
+
+      // Volume Metric
+      metrics.push({
+        id: `pass-${id}`,
+        team_id: id,
+        metric_name: 'Total Passes',
+        metric_type: 'distribution',
+        metric_value: stats.passes
+      });
+    });
+
+    return metrics;
+  } catch (err) {
+    console.error("Error fetching tactical metrics:", err);
+    return [];
+  }
+}
 export async function getMatchById(matchId: number) {
   try {
     const modules = import.meta.glob('/src/data/matches/**/*.json');
+    const events = import.meta.glob('/src/data/events/{matchId}.json');
 
     // Loop through all files
     for (const path in modules) {
@@ -185,8 +309,14 @@ export async function getMatchById(matchId: number) {
           home_score: match.home_score,
           away_score: match.away_score,
           stadium: match.stadium?.name,
+          referee: match.referee?.name,
+          country:match.stadium.country?.name,
           kick_off: match.kick_off,
-          competition: match.competition?.competition_name,
+          competition: match.competition,
+           home_team_manager: match.home_team?.managers?.[0]?.name,
+            away_team_manager: match.away_team?.managers?.[0]?.name,
+            match_week: match.match_week,
+
         };
       }
     }
@@ -305,7 +435,7 @@ export async function getEventsByPlayer(playerId: number, limit = 100) {
 }
 
 // Tactical Metrics API
-export async function getTacticalMetricsByMatch(matchId: number) {
+export async function getTacticalMet1ricsByMatch(matchId: number) {
   const { data, error } = await supabase
     .from('tactical_metrics')
     .select(`
@@ -337,7 +467,7 @@ export async function getTacticalMetricsByTeam(teamId: number, metricType?: stri
 }
 
 // Player Stats API
-export async function getPlayerStatsByMatch(matchId: number) {
+export async function getPlayerSt1atsByMatch(matchId: number) {
   const { data, error } = await supabase
     .from('player_stats')
     .select(`
