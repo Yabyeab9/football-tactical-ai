@@ -162,56 +162,171 @@ export async function getMatches(
     return [];
   }
 }
-export async function getPlayerStatsByMatch(matchId: number): Promise<any[]> {
+type PlayerStats = {
+  id: number;
+  team_id: number;
+  player: { player_name: string };
+  minutes_played: number;
+  passes_attempted: number;
+  passes_completed: number;
+  key_passes: number;
+  progressive_passes: number;
+  shots: number;
+  xg: number;
+  xa: number;
+  assists: number;
+  carries: number;
+  dribbles: number;
+  tackles: number;
+  interceptions: number;
+  clearances: number;
+  blocks: number;
+  heatmap: [number, number][];
+};
+
+type TeamShape = Record<number, Record<number, { xSum: number; ySum: number; count: number }>>;
+
+export async function getPlayerStatsByMatch(matchId: number): Promise<{ players: PlayerStats[]; teamShape: TeamShape }> {
   try {
     const eventModules = import.meta.glob('/src/data/events/*.json');
-    const eventPath = `/src/data/events/${matchId}.json`;
+    const entry = Object.entries(eventModules).find(([path]) => path.endsWith(`/${matchId}.json`));
+    if (!entry) return { players: [], teamShape: {} };
 
-    if (!eventModules[eventPath]) return [];
-
-    const mod: any = await eventModules[eventPath]();
+    const mod: any = await entry[1]();
     const events = mod.default;
-    const playerMap = new Map();
 
-    events.forEach((event: any) => {
+    const playerMap = new Map<number, PlayerStats>();
+    const playerMinutes = new Map<number, { start: number; end: number }>();
+    const teamShape: TeamShape = {};
+
+    const MATCH_END = 90;
+
+    for (const event of events) {
       const teamId = event.team?.id;
       const player = event.player;
 
-      if (player && teamId) {
-        if (!playerMap.has(player.id)) {
-          playerMap.set(player.id, {
-            id: player.id,
-            team_id: teamId,
-            player: { player_name: player.name },
-            minutes_played: 90, // Simplified; can be refined with sub events
-            passes_attempted: 0,
-            passes_completed: 0,
-            shots: 0,
-          });
-        }
+      // -------------------
+      // Track minutes
+      // -------------------
+      if (event.type?.name === 'Starting XI') {
+        event.tactics?.lineup?.forEach((p: any) => {
+          playerMinutes.set(p.player.id, { start: 0, end: MATCH_END });
+        });
+      }
 
-        const stats = playerMap.get(player.id);
-
-        // Pass Aggregation
-        if (event.type.name === 'Pass') {
-          stats.passes_attempted++;
-          // In StatsBomb, a pass is complete if it has no 'outcome' property
-          if (!event.pass?.outcome) {
-            stats.passes_completed++;
-          }
-        }
-
-        // Shot Aggregation
-        if (event.type.name === 'Shot') {
-          stats.shots++;
+      if (event.type?.name === 'Substitution') {
+        const minute = event.minute;
+        // player going OUT
+        if (playerMinutes.has(event.player.id)) playerMinutes.get(event.player.id)!.end = minute;
+        // player coming IN
+        if (event.substitution?.replacement) {
+          playerMinutes.set(event.substitution.replacement.id, { start: minute, end: MATCH_END });
         }
       }
+
+      if (!player || !teamId) continue;
+
+      // -------------------
+      // Initialize stats
+      // -------------------
+      let stats = playerMap.get(player.id);
+      if (!stats) {
+        stats = {
+          id: player.id,
+          team_id: teamId,
+          player: { player_name: player.name },
+          minutes_played: 0,
+          passes_attempted: 0,
+          passes_completed: 0,
+          key_passes: 0,
+          progressive_passes: 0,
+          shots: 0,
+          xg: 0,
+          xa: 0,
+          assists: 0,
+          carries: 0,
+          dribbles: 0,
+          tackles: 0,
+          interceptions: 0,
+          clearances: 0,
+          blocks: 0,
+          heatmap: [],
+        };
+        playerMap.set(player.id, stats);
+      }
+
+      // -------------------
+      // Track heatmap
+      // -------------------
+      if (event.location) stats.heatmap.push(event.location);
+
+      // -------------------
+      // Track team shape
+      // -------------------
+      teamShape[teamId] = teamShape[teamId] || {};
+      const pos = teamShape[teamId][player.id] || { xSum: 0, ySum: 0, count: 0 };
+      if (event.location) {
+        pos.xSum += event.location[0];
+        pos.ySum += event.location[1];
+        pos.count++;
+      }
+      teamShape[teamId][player.id] = pos;
+
+      // -------------------
+      // Passes
+      // -------------------
+      if (event.type?.name === 'Pass') {
+        stats.passes_attempted++;
+        if (!event.pass?.outcome) stats.passes_completed++;
+        if (event.pass?.shot_assist) stats.key_passes++;
+        if (event.pass?.goal_assist) stats.assists++;
+        if (event.pass?.shot_assist?.statsbomb_xg) stats.xa += event.pass.shot_assist.statsbomb_xg;
+
+        // Progressive pass
+        if (!event.pass?.outcome && event.pass?.start_location && event.pass?.end_location) {
+          const distanceY = event.pass.end_location[1] - event.pass.start_location[1];
+          if (distanceY > 30) stats.progressive_passes++;
+        }
+      }
+
+      // -------------------
+      // Shots
+      // -------------------
+      if (event.type?.name === 'Shot') {
+        stats.shots++;
+        stats.xg += event.shot?.statsbomb_xg || 0;
+      }
+
+      // -------------------
+      // Carries / Dribbles
+      // -------------------
+      if (event.type?.name === 'Carry') {
+        const start = event.carry?.start_location?.[1] || 0;
+        const end = event.carry?.end_location?.[1] || 0;
+        if (end - start > 5) stats.carries++;
+      }
+
+      if (event.type?.name === 'Dribble') stats.dribbles++;
+
+      // -------------------
+      // Defensive actions
+      // -------------------
+      if (event.type?.name === 'Tackle') stats.tackles++;
+      if (event.type?.name === 'Interception') stats.interceptions++;
+      if (event.type?.name === 'Clearance') stats.clearances++;
+      if (event.type?.name === 'Block') stats.blocks++;
+    }
+
+
+    playerMap.forEach((stats, playerId) => {
+      const minutes = playerMinutes.get(playerId);
+      if (minutes) stats.minutes_played = minutes.end - minutes.start;
     });
 
-    return Array.from(playerMap.values());
+    return { players: Array.from(playerMap.values()), teamShape };
   } catch (err) {
-    console.error("Error fetching player stats:", err);
-    return [];
+    console.error('Error fetching player stats:', err);
+    return { players: [], teamShape: {} };
   }
 }
 
@@ -305,6 +420,8 @@ export async function getMatchById(matchId: number) {
           match_id: match.match_id,
           home_team: { team_name: match.home_team?.home_team_name },
           away_team: { team_name: match.away_team?.away_team_name },
+          home_team_id: match.home_team?.home_team_id ,
+          away_team_id: match.away_team?.away_team_id ,
           match_date: match.match_date,
           home_score: match.home_score,
           away_score: match.away_score,

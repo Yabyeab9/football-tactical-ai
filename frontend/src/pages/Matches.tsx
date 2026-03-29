@@ -1,84 +1,107 @@
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layouts/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { getMatches, getCompetitions, getTeams } from '@/db/api';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Link } from 'react-router';
-import { Activity, Calendar, MapPin, Filter } from 'lucide-react';
+import { Activity, Calendar, Filter, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import type { Match, Competition, Team } from '@/types';
 
 export default function Matches() {
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [competitions, setCompetitions] = useState<Competition[]>([]);
-  const [teams, setTeams] = useState<Team[]>([]);
+  const [allMatches, setAllMatches] = useState<any[]>([]);
+  const [filteredMatches, setFilteredMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Filter states
-  const [sortBy, setSortBy] = useState<'date' | 'competition' | 'match_week' | 'goals'>('date');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [selectedCompetition, setSelectedCompetition] = useState<string>('all');
-  const [selectedTeam, setSelectedTeam] = useState<string>('all');
-  const [selectedSeason, setSelectedSeason] = useState<string>('all');
-  const [goalRange, setGoalRange] = useState<string>('all');
+  // Filter & Sort States
+  const [sortBy, setSortBy] = useState<'time' | 'league' | 'goals'>('time');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [selectedLeague, setSelectedLeague] = useState<string>('all');
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
+  // 1. Fetch live match data
   useEffect(() => {
-    async function loadInitialData() {
+    async function fetchLiveMatches() {
       try {
-        const [comps, teamsList] = await Promise.all([
-          getCompetitions(),
-          getTeams(),
-        ]);
-        setCompetitions(comps);
-        setTeams(teamsList);
+        const res = await fetch("http://localhost:8000/live-matches");
+        const data = await res.json();
+        setAllMatches(data);
       } catch (error) {
-        console.error('Error loading initial data:', error);
-      }
-    }
-    loadInitialData();
-  }, []);
-
-  useEffect(() => {
-    async function loadMatches() {
-      setLoading(true);
-      try {
-        const filters: any = {
-          sort_by: sortBy,
-          sort_order: sortOrder,
-        };
-
-        if (selectedCompetition !== 'all') {
-          filters.competition_id = Number.parseInt(selectedCompetition);
-        }
-
-        if (selectedTeam !== 'all') {
-          filters.team_id = Number.parseInt(selectedTeam);
-        }
-
-        if (selectedSeason !== 'all') {
-          filters.season_name = selectedSeason;
-        }
-
-        if (goalRange !== 'all') {
-          const [min, max] = goalRange.split('-').map(Number);
-          if (!Number.isNaN(min)) filters.min_goals = min;
-          if (!Number.isNaN(max)) filters.max_goals = max;
-        }
-
-        const data = await getMatches(5, 0, filters);
-        setMatches(data);
-      } catch (error) {
-        console.error('Error loading matches:', error);
+        console.error("Failed to fetch live matches:", error);
       } finally {
         setLoading(false);
       }
     }
-    loadMatches();
-  }, [sortBy, sortOrder, selectedCompetition, selectedTeam, selectedSeason, goalRange]);
 
-  const seasons = Array.from(new Set(competitions.map(c => c.season_name)));
+    fetchLiveMatches();
+    const interval = setInterval(fetchLiveMatches, 60000); // Refresh every minute
+    return () => clearInterval(interval);
+  }, []);
+
+  // 2. Client-side Filtering & Sorting
+  useEffect(() => {
+    let result = [...allMatches];
+
+    // Filter by League
+    if (selectedLeague !== 'all') {
+      result = result.filter(m => m.league === selectedLeague);
+    }
+
+    // Filter by Status
+    if (selectedStatus !== 'all') {
+      result = result.filter(m => {
+        const s = m.status?.toLowerCase();
+        if (selectedStatus === 'live') return ["1h", "2h", "ht", "et", "p", "live"].includes(s);
+        if (selectedStatus === 'finished') return ["ft", "aet", "pen"].includes(s);
+        if (selectedStatus === 'upcoming') return ["ns", "tbd"].includes(s);
+        return true;
+      });
+    }
+
+    // Search by Team
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(m =>
+        m.home_team?.toLowerCase().includes(q) ||
+        m.away_team?.toLowerCase().includes(q)
+      );
+    }
+
+    // Sort Data
+    result.sort((a, b) => {
+      let valA, valB;
+
+      if (sortBy === 'time') {
+        valA = new Date(a.time).getTime();
+        valB = new Date(b.time).getTime();
+      } else if (sortBy === 'league') {
+        valA = a.league;
+        valB = b.league;
+      } else if (sortBy === 'goals') {
+        valA = (a.home_score || 0) + (a.away_score || 0);
+        valB = (b.home_score || 0) + (b.away_score || 0);
+      }
+
+      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    setFilteredMatches(result);
+  }, [allMatches, sortBy, sortOrder, selectedLeague, selectedStatus, searchQuery]);
+
+  // Extract unique leagues dynamically for the dropdown
+  const uniqueLeagues = Array.from(new Set(allMatches.map(m => m.league))).sort() as string[];
+
+  // Helper for badges
+  const getStatusBadge = (status: string) => {
+    const s = status?.toLowerCase();
+    if (["1h", "2h", "ht", "et", "live", "p"].includes(s)) return <Badge variant="destructive" className="animate-pulse">⚡ LIVE</Badge>;
+    if (["ns", "tbd"].includes(s)) return <Badge variant="secondary">Upcoming</Badge>;
+    if (["ft", "aet", "pen"].includes(s)) return <Badge variant="outline">FT</Badge>;
+    return <Badge variant="outline">{status}</Badge>;
+  };
 
   return (
     <MainLayout>
@@ -86,7 +109,7 @@ export default function Matches() {
         <div>
           <h1 className="text-3xl font-bold">Matches</h1>
           <p className="text-muted-foreground mt-2">
-            Browse and analyze match data from StatsBomb
+            Browse and track today's live global fixtures
           </p>
         </div>
 
@@ -97,11 +120,57 @@ export default function Matches() {
               Filter & Sort Options
             </CardTitle>
             <CardDescription>
-              Customize your match view with filters and sorting
+              Customize your match view based on live data
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div className="space-y-2">
+                <Label>Search Team</Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    placeholder="Search teams..."
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Match Status</Label>
+                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Matches</SelectItem>
+                    <SelectItem value="live">Live Now</SelectItem>
+                    <SelectItem value="upcoming">Upcoming</SelectItem>
+                    <SelectItem value="finished">Finished</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>League / Competition</Label>
+                <Select value={selectedLeague} onValueChange={setSelectedLeague}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Leagues</SelectItem>
+                    {uniqueLeagues.map(league => (
+                      <SelectItem key={league} value={league}>
+                        {league}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label>Sort By</Label>
                 <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
@@ -109,9 +178,8 @@ export default function Matches() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="date">Date</SelectItem>
-                    <SelectItem value="competition">Competition</SelectItem>
-                    <SelectItem value="match_week">Match Week</SelectItem>
+                    <SelectItem value="time">Kick-off Time</SelectItem>
+                    <SelectItem value="league">League Name</SelectItem>
                     <SelectItem value="goals">Total Goals</SelectItem>
                   </SelectContent>
                 </Select>
@@ -126,73 +194,6 @@ export default function Matches() {
                   <SelectContent>
                     <SelectItem value="desc">Descending</SelectItem>
                     <SelectItem value="asc">Ascending</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Competition</Label>
-                <Select value={selectedCompetition} onValueChange={setSelectedCompetition}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Competitions</SelectItem>
-                    {competitions.map(comp => (
-                      <SelectItem key={comp.competition_id} value={comp.competition_id.toString()}>
-                        {comp.competition_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Team</Label>
-                <Select value={selectedTeam} onValueChange={setSelectedTeam}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Teams</SelectItem>
-                    {teams.slice(0, 20).map(team => (
-                      <SelectItem key={team.team_id} value={team.team_id.toString()}>
-                        {team.team_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Season</Label>
-                <Select value={selectedSeason} onValueChange={setSelectedSeason}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Seasons</SelectItem>
-                    {seasons.map(season => (
-                      <SelectItem key={season} value={season}>
-                        {season}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Goal Range</Label>
-                <Select value={goalRange} onValueChange={setGoalRange}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Matches</SelectItem>
-                    <SelectItem value="0-0">0 Goals (0-0)</SelectItem>
-                    <SelectItem value="1-2">Low Scoring (1-2)</SelectItem>
-                    <SelectItem value="3-4">Medium Scoring (3-4)</SelectItem>
-                    <SelectItem value="5-10">High Scoring (5+)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -214,68 +215,56 @@ export default function Matches() {
               </Card>
             ))}
           </div>
-        ) : matches.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2">
-            {matches.map((match) => (
-              <Link key={match.match_id} to={`/matches/${match.match_id}`}>
-                <Card className="hover:shadow-hover transition-shadow h-full">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">
-                        {match.home_team?.team_name || 'Home'} vs {match.away_team?.team_name || 'Away'}
-                      </CardTitle>
-                      <Badge variant="outline">{match.match_status}</Badge>
-                    </div>
-                    <CardDescription className="flex items-center gap-2">
-                      <Activity className="h-3 w-3" />
-                      {match.competition?.competition_name}
-                      {match.match_week && ` • Week ${match.match_week}`}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center justify-center gap-8 py-4">
-                      <div className="text-center">
-                        <div className="text-3xl font-bold">{match.home_score}</div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {match.home_team?.team_name}
+        ) : filteredMatches.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {filteredMatches.map((match) => {
+              const dateObj = new Date(match.time);
+              const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+              return (
+                <Link key={match.id} to={`/matches/${match.id}`}>
+                  <Card className="hover:shadow-hover transition-shadow h-full flex flex-col justify-between">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-start justify-between">
+                        <CardDescription className="flex items-center gap-2 text-xs font-semibold text-primary">
+                          <Activity className="h-3 w-3" />
+                          {match.league}
+                        </CardDescription>
+                        {getStatusBadge(match.status)}
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 text-right">
+                          <div className="font-bold text-lg leading-tight">{match.home_team}</div>
+                        </div>
+                        <div className="px-4 text-center">
+                          <div className="bg-muted px-3 py-1 rounded-md font-mono text-xl font-bold">
+                            {match.home_score ?? '-'} : {match.away_score ?? '-'}
+                          </div>
+                        </div>
+                        <div className="flex-1 text-left">
+                          <div className="font-bold text-lg leading-tight">{match.away_team}</div>
                         </div>
                       </div>
-                      <div className="text-2xl font-bold text-muted-foreground">-</div>
-                      <div className="text-center">
-                        <div className="text-3xl font-bold">{match.away_score}</div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {match.away_team?.team_name}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <div className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {match.match_date}
-                        {match.kick_off && ` • ${match.kick_off.slice(0, 5)}`}
-                      </div>
-                      {match.stadium && (
+                      <div className="flex items-center justify-center text-xs text-muted-foreground pt-2 border-t">
                         <div className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {match.stadium}
+                          <Calendar className="h-3 w-3" />
+                          Today • {timeStr}
                         </div>
-                      )}
-                    </div>
-                    {match.season_name && (
-                      <div className="text-xs text-muted-foreground">
-                        Season: {match.season_name}
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         ) : (
           <Card>
             <CardContent className="py-12 text-center">
               <Activity className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No matches found with current filters</p>
+              <p className="text-lg font-medium">No matches found</p>
+              <p className="text-muted-foreground text-sm mt-1">Try adjusting your filters or search query.</p>
             </CardContent>
           </Card>
         )}

@@ -28,9 +28,14 @@ export interface Match {
   away_team_id: number | null;
   home_score: number;
   away_score: number;
+  live_home_score: number;
+  live_away_score: number;
   stadium: string | null;
   referee: string | null;
   match_status: string;
+  match_status_live: 'scheduled' | 'upcoming' | 'live' | 'finished' | 'postponed';
+  current_minute: number | null;
+  is_featured: boolean;
   kick_off: string | null;
   match_week: number | null;
   competition_stage: string | null;
@@ -259,4 +264,3 @@ export interface InjuryRiskAssessment {
   most_common_injury: string;
   last_injury_date: string | null;
 }
-
