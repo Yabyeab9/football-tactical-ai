@@ -2,19 +2,19 @@ import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layouts/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Link } from 'react-router';
+import { Link } from 'react-router-dom'; // Note: usually react-router-dom for React web
 import {
-  Activity, Calendar, Clock, TrendingUp, Zap, Radio, ChevronRight, Trophy, Target, Brain,
+  Activity, Calendar, Clock, TrendingUp, Zap, Radio, ChevronRight, Trophy, Target, Brain, BarChart2
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-// Note: You may need to update your types.ts to match this structure!
 export default function Dashboard() {
   const [featuredMatch, setFeaturedMatch] = useState<any | null>(null);
   const [liveMatches, setLiveMatches] = useState<any[]>([]);
   const [upcomingMatches, setUpcomingMatches] = useState<any[]>([]);
   const [recentMatches, setRecentMatches] = useState<any[]>([]);
+  const [liveCount, setLiveCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -23,23 +23,20 @@ export default function Dashboard() {
         const res = await fetch("http://localhost:8000/live-matches");
         const data = await res.json();
 
-        // ✅ API-Sports Status Codes
         const liveCodes = ["1h", "2h", "ht", "et", "p", "live"];
         const upcomingCodes = ["ns", "tbd"];
         const finishedCodes = ["ft", "aet", "pen"];
 
-        // ✅ LIVE MATCHES
-        const live = data.filter((m: any) => liveCodes.includes(m.status?.toLowerCase()));
+        const allLive = data.filter((m: any) => liveCodes.includes(m.status?.toLowerCase()));
+        setLiveCount(allLive.length); // Fixed scope issue
 
-        // ✅ FEATURED MATCH (best live one)
+        const live = allLive.slice(0, 5);
         const featured = live.length > 0 ? live[0] : null;
 
-        // ✅ UPCOMING
         const upcoming = data
           .filter((m: any) => upcomingCodes.includes(m.status?.toLowerCase()))
           .slice(0, 6);
 
-        // ✅ RECENT (finished matches)
         const recent = data
           .filter((m: any) => finishedCodes.includes(m.status?.toLowerCase()))
           .slice(0, 6);
@@ -56,25 +53,32 @@ export default function Dashboard() {
     }
 
     loadDashboardData();
-    const interval = setInterval(loadDashboardData, 30000); // refresh every 30s
+    const interval = setInterval(loadDashboardData, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const getStatusBadge = (status: string) => {
     const s = status?.toLowerCase();
     if (["1h", "2h", "ht", "et", "live"].includes(s)) {
-      return <Badge variant="destructive" className="animate-pulse">⚡ LIVE</Badge>;
+      return (
+        <Badge variant="destructive" className="bg-red-500/10 text-red-500 hover:bg-red-500/20 border-0 flex items-center gap-1.5 font-mono text-xs shadow-none">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+          </span>
+          {status.toUpperCase()}
+        </Badge>
+      );
     }
     if (["ns", "tbd"].includes(s)) {
-      return <Badge variant="secondary">Upcoming</Badge>;
+      return <Badge variant="secondary" className="bg-secondary/50 font-mono text-xs">UPCOMING</Badge>;
     }
     if (["ft", "aet", "pen"].includes(s)) {
-      return <Badge variant="outline">FT</Badge>;
+      return <Badge variant="outline" className="font-mono text-xs bg-muted/30">FT</Badge>;
     }
-    return <Badge variant="outline">{status}</Badge>;
+    return <Badge variant="outline" className="font-mono text-xs">{status}</Badge>;
   };
 
-  // Helper to format the ISO time string
   const formatTime = (timeStr: string) => {
     const date = new Date(timeStr);
     return {
@@ -85,293 +89,262 @@ export default function Dashboard() {
 
   return (
     <MainLayout>
-      <div className="space-y-6">
-        {/* Hero Section */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-4xl font-bold">Football Tactical AI</h1>
-            <p className="text-muted-foreground mt-2 text-lg">
-              Live matches, advanced analytics, and AI-powered insights
+      <div className="space-y-8 pb-8 max-w-[1600px] mx-auto">
+
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-border/50 pb-6">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-primary font-mono text-sm tracking-wider uppercase mb-2">
+              <BarChart2 className="h-4 w-4" /> Elshadi Analytics Engine
+            </div>
+            <h1 className="text-4xl font-extrabold tracking-tight">Match Intelligence</h1>
+            <p className="text-muted-foreground text-lg max-w-2xl">
+              Live tactical data, predictive metrics, and real-time event tracking.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Radio className="h-5 w-5 text-destructive animate-pulse" />
-            <span className="text-sm font-medium">{liveMatches.length} Live Now</span>
+          <div className="flex items-center gap-3 bg-card px-4 py-2 rounded-full border shadow-sm">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+            </span>
+            <span className="text-sm font-semibold tracking-wide">
+              {liveCount} {liveCount === 1 ? 'Match' : 'Matches'} Live
+            </span>
           </div>
         </div>
 
-        {/* Featured Live Match */}
+        {/* Featured Broadcast Scoreboard */}
         {loading ? (
-          <Skeleton className="h-64 w-full bg-muted" />
+          <Skeleton className="h-64 w-full rounded-2xl bg-muted/50" />
         ) : featuredMatch ? (
-          <Card className="pitch-gradient border-2 border-primary">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Trophy className="h-5 w-5 text-primary" />
-                  <CardTitle>Featured Match</CardTitle>
+          <Link to={`/matches/${featuredMatch.id}`} className="block group">
+            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-slate-800 shadow-2xl transition-all duration-300 hover:shadow-primary/5 hover:border-primary/30">
+              {/* Abstract background graphics */}
+              <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px]"></div>
+              <div className="absolute top-0 right-0 w-96 h-96 bg-primary/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+
+              <div className="relative p-6 md:p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-2 bg-slate-950/50 backdrop-blur-sm px-3 py-1.5 rounded-md border border-white/5 text-white/80 text-sm font-medium">
+                    <Trophy className="h-4 w-4 text-primary" />
+                    {featuredMatch.league}
+                  </div>
+                  {getStatusBadge(featuredMatch.status)}
                 </div>
-                <Badge variant="destructive" className="animate-pulse text-base px-4 py-1">
-                  ⚡ {featuredMatch.status}
-                </Badge>
+
+                <div className="flex items-center justify-between gap-4">
+                  {/* Home Team */}
+                  <div className="flex-1 text-right">
+                    <h3 className="text-3xl md:text-5xl font-bold text-white tracking-tight drop-shadow-sm">
+                      {featuredMatch.home_team}
+                    </h3>
+                  </div>
+
+                  {/* Score Box */}
+                  <div className="flex items-center gap-4 px-6 md:px-12">
+                    <div className="bg-slate-950/80 backdrop-blur-md px-6 py-4 rounded-xl border border-white/10 flex items-center gap-4 shadow-inner">
+                      <span className="text-5xl md:text-7xl font-black text-white font-mono tabular-nums">
+                        {featuredMatch.home_score ?? 0}
+                      </span>
+                      <span className="text-2xl text-slate-500 font-bold">-</span>
+                      <span className="text-5xl md:text-7xl font-black text-white font-mono tabular-nums">
+                        {featuredMatch.away_score ?? 0}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Away Team */}
+                  <div className="flex-1 text-left">
+                    <h3 className="text-3xl md:text-5xl font-bold text-white tracking-tight drop-shadow-sm">
+                      {featuredMatch.away_team}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="mt-8 flex justify-center opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 absolute bottom-6 left-1/2 -translate-x-1/2">
+                  <span className="flex items-center text-sm font-medium text-primary bg-primary/10 px-4 py-2 rounded-full border border-primary/20 backdrop-blur-md">
+                    Open Match Center <ChevronRight className="h-4 w-4 ml-1" />
+                  </span>
+                </div>
               </div>
-              <CardDescription className="text-base">
-                {featuredMatch.league}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Link to={`/matches/${featuredMatch.id}`}>
-                <div className="flex items-center justify-between py-6 hover:opacity-80 transition-opacity">
-                  <div className="flex-1 text-center">
-                    <h3 className="text-2xl font-bold mb-2">{featuredMatch.home_team}</h3>
-                    <div className="text-6xl font-bold mt-4">{featuredMatch.home_score ?? 0}</div>
-                  </div>
-
-                  <div className="px-8 text-center">
-                    <div className="text-3xl font-bold text-muted-foreground">VS</div>
-                    <Button asChild variant="outline" className="mt-4">
-                      <Link to={`/matches/${featuredMatch.id}`}>
-                        View Details<ChevronRight className="h-4 w-4 ml-2" />
-                      </Link>
-                    </Button>
-                  </div>
-
-                  <div className="flex-1 text-center">
-                    <h3 className="text-2xl font-bold mb-2">{featuredMatch.away_team}</h3>
-                    <div className="text-6xl font-bold mt-4">{featuredMatch.away_score ?? 0}</div>
-                  </div>
-                </div>
-              </Link>
-            </CardContent>
-          </Card>
+            </div>
+          </Link>
         ) : null}
 
-        {/* Quick Actions (Unchanged) */}
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card className="hover:shadow-hover transition-shadow cursor-pointer">
-            <Link to="/injury-analysis">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Injury Analysis</CardTitle>
-                <Activity className="h-4 w-4 text-destructive" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">Track Risk</div>
-                <p className="text-xs text-muted-foreground mt-1">Injury-prone players & predictions</p>
-              </CardContent>
+        {/* Tactical Modules (Quick Actions) */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { to: "/injury-analysis", title: "Injury Risk", icon: Activity, metric: "Risk Models", desc: "Predictive injury analytics", color: "text-red-500", bg: "bg-red-500/10" },
+            { to: "/manager-analysis", title: "Manager Profiles", icon: Target, metric: "Tactical DNA", desc: "Playstyle & survival mapping", color: "text-blue-500", bg: "bg-blue-500/10" },
+            { to: "/ai-predictions", title: "Match Predictor", icon: Brain, metric: "ML Forecasts", desc: "Data-driven outcomes", color: "text-emerald-500", bg: "bg-emerald-500/10" },
+            { to: "/undiscovered-insights", title: "Deep Metrics", icon: Zap, metric: "xG & Beyond", desc: "Advanced hidden variables", color: "text-amber-500", bg: "bg-amber-500/10" }
+          ].map((item, i) => (
+            <Link key={i} to={item.to} className="block group">
+              <Card className="h-full border border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card hover:shadow-md hover:border-primary/20 transition-all duration-300">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+                      {item.title}
+                    </CardTitle>
+                    <div className={`p-2 rounded-md ${item.bg}`}>
+                      <item.icon className={`h-4 w-4 ${item.color}`} />
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-xl font-bold tracking-tight">{item.metric}</div>
+                  <p className="text-xs text-muted-foreground mt-1.5">{item.desc}</p>
+                </CardContent>
+              </Card>
             </Link>
-          </Card>
-
-          <Card className="hover:shadow-hover transition-shadow cursor-pointer">
-            <Link to="/manager-analysis">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Manager Insights</CardTitle>
-                <Target className="h-4 w-4 text-primary" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">EPL Experts</div>
-                <p className="text-xs text-muted-foreground mt-1">Specialists & survival rates</p>
-              </CardContent>
-            </Link>
-          </Card>
-
-          <Card className="hover:shadow-hover transition-shadow cursor-pointer">
-            <Link to="/ai-predictions">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">AI Predictions</CardTitle>
-                <Brain className="h-4 w-4 text-chart-2" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">ML Insights</div>
-                <p className="text-xs text-muted-foreground mt-1">Powered by machine learning</p>
-              </CardContent>
-            </Link>
-          </Card>
-
-          <Card className="hover:shadow-hover transition-shadow cursor-pointer">
-            <Link to="/undiscovered-insights">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Hidden Metrics</CardTitle>
-                <Zap className="h-4 w-4 text-chart-4" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">Discover</div>
-                <p className="text-xs text-muted-foreground mt-1">Untapped analytical areas</p>
-              </CardContent>
-            </Link>
-          </Card>
+          ))}
         </div>
 
-        {/* Live Matches */}
-        {liveMatches.length > 0 && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Radio className="h-5 w-5 text-destructive animate-pulse" />
-                  <CardTitle>Live Matches</CardTitle>
-                </div>
-                <Button asChild variant="ghost" size="sm">
-                  <Link to="/matches">View All<ChevronRight className="h-4 w-4 ml-2" /></Link>
-                </Button>
+        {/* Data Grids */}
+        <div className="grid gap-6 lg:grid-cols-3">
+
+          {/* Live Matches Column */}
+          <div className="lg:col-span-1 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Radio className="h-5 w-5 text-red-500" />
+                <h2 className="text-lg font-semibold tracking-tight">Live Tracker</h2>
               </div>
-              <CardDescription>Matches happening right now</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-3">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <Skeleton key={i} className="h-24 w-full bg-muted" />
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {liveMatches.map((match) => (
-                    <Link key={match.id} to={`/matches/${match.id}`}>
-                      <div className="p-4 rounded-lg border border-border hover:bg-accent transition-colors">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="destructive" className="animate-pulse">
-                              {match.status}
-                            </Badge>
-                            <span className="text-sm text-muted-foreground">
-                              {match.league}
-                            </span>
-                          </div>
-                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <Button asChild variant="link" size="sm" className="h-auto p-0 text-muted-foreground hover:text-primary">
+                <Link to="/matches">View All <ChevronRight className="h-4 w-4 ml-1" /></Link>
+              </Button>
+            </div>
+
+            {loading ? (
+              Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-28 w-full rounded-xl bg-muted/50" />)
+            ) : liveMatches.length > 0 ? (
+              <div className="space-y-3">
+                {liveMatches.map((match) => (
+                  <Link key={match.id} to={`/matches/${match.id}`} className="block group">
+                    <div className="p-4 rounded-xl border border-border/50 bg-card hover:border-primary/30 transition-all duration-200">
+                      <div className="flex items-center justify-between mb-3 border-b border-border/50 pb-2">
+                        <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{match.league}</span>
+                        {getStatusBadge(match.status)}
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">{match.home_team}</span>
+                          <span className="font-mono font-bold text-lg">{match.home_score ?? 0}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="font-medium">{match.home_team}</span>
-                              <span className="text-2xl font-bold">{match.home_score ?? 0}</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium">{match.away_team}</span>
-                              <span className="text-2xl font-bold">{match.away_score ?? 0}</span>
-                            </div>
-                          </div>
+                          <span className="font-medium text-sm">{match.away_team}</span>
+                          <span className="font-mono font-bold text-lg">{match.away_score ?? 0}</span>
                         </div>
                       </div>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Upcoming Matches */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-primary" />
-                  <CardTitle>Upcoming Matches</CardTitle>
-                </div>
-                <Button asChild variant="ghost" size="sm">
-                  <Link to="/matches">View All<ChevronRight className="h-4 w-4 ml-2" /></Link>
-                </Button>
+                    </div>
+                  </Link>
+                ))}
               </div>
-              <CardDescription>Scheduled fixtures</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-3">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} className="h-20 w-full bg-muted" />
-                  ))}
+            ) : (
+              <div className="p-8 text-center rounded-xl border border-dashed border-border/50 bg-card/30">
+                <p className="text-sm text-muted-foreground">No matches currently live</p>
+              </div>
+            )}
+          </div>
+
+          {/* Upcoming & Recent Columns */}
+          <div className="lg:col-span-2 space-y-6">
+
+            {/* Recent Results */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-muted-foreground" />
+                  <h2 className="text-lg font-semibold tracking-tight">Latest Outcomes</h2>
                 </div>
-              ) : upcomingMatches.length > 0 ? (
-                <div className="space-y-3">
-                  {upcomingMatches.map((match) => {
+              </div>
+
+              <Card className="overflow-hidden border-border/50 shadow-sm">
+                <div className="divide-y divide-border/50">
+                  {loading ? (
+                     Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-none bg-muted/20" />)
+                  ) : recentMatches.length > 0 ? (
+                    recentMatches.map((match) => {
+                      const { date } = formatTime(match.time);
+                      const homeWon = match.home_score > match.away_score;
+                      const awayWon = match.away_score > match.home_score;
+
+                      return (
+                        <Link key={match.id} to={`/matches/${match.id}`} className="block hover:bg-muted/30 transition-colors">
+                          <div className="flex items-center p-3 sm:p-4 text-sm">
+                            <div className="w-24 shrink-0 text-muted-foreground flex flex-col">
+                              <span className="font-mono text-xs">{date}</span>
+                              <span className="text-[10px] uppercase truncate pr-2">{match.league}</span>
+                            </div>
+
+                            <div className="flex-1 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+                              <div className={`text-right truncate ${homeWon ? 'font-bold text-foreground' : 'text-muted-foreground'}`}>
+                                {match.home_team}
+                              </div>
+                              <div className="bg-background px-3 py-1 rounded-md border border-border/50 font-mono font-bold tracking-widest min-w-[64px] text-center">
+                                {match.home_score} - {match.away_score}
+                              </div>
+                              <div className={`text-left truncate ${awayWon ? 'font-bold text-foreground' : 'text-muted-foreground'}`}>
+                                {match.away_team}
+                              </div>
+                            </div>
+
+                            <div className="w-16 shrink-0 flex justify-end">
+                              {getStatusBadge(match.status)}
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    })
+                  ) : (
+                    <div className="p-8 text-center text-sm text-muted-foreground">No recent matches found.</div>
+                  )}
+                </div>
+              </Card>
+            </div>
+
+            {/* Upcoming Fixtures */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5 text-muted-foreground" />
+                  <h2 className="text-lg font-semibold tracking-tight">Upcoming Fixtures</h2>
+                </div>
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl bg-muted/50" />)
+                ) : upcomingMatches.length > 0 ? (
+                  upcomingMatches.map((match) => {
                     const { date, time } = formatTime(match.time);
                     return (
-                      <Link key={match.id} to={`/matches/${match.id}`}>
-                        <div className="p-3 rounded-lg border border-border hover:bg-accent transition-colors">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2 text-sm">
-                              <Calendar className="h-3 w-3" />
-                              <span className="text-muted-foreground">{date} • {time}</span>
+                      <Link key={match.id} to={`/matches/${match.id}`} className="block group">
+                        <Card className="p-4 h-full border-border/50 shadow-sm hover:border-primary/30 transition-colors">
+                          <div className="flex justify-between items-start mb-3">
+                            <div className="flex items-center gap-1.5 text-xs font-mono text-muted-foreground bg-muted/50 px-2 py-1 rounded-md">
+                              <Clock className="h-3 w-3" /> {date} • {time}
                             </div>
-                            {getStatusBadge(match.status)}
+                            <span className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">{match.league}</span>
                           </div>
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium">{match.home_team}</span>
-                            <span className="text-muted-foreground">vs</span>
-                            <span className="font-medium">{match.away_team}</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium text-sm truncate flex-1">{match.home_team}</span>
+                            <span className="text-muted-foreground text-xs font-medium px-2">VS</span>
+                            <span className="font-medium text-sm truncate flex-1 text-right">{match.away_team}</span>
                           </div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {match.league}
-                          </div>
-                        </div>
+                        </Card>
                       </Link>
                     )
-                  })}
-                </div>
-              ) : (
-                <p className="text-center text-muted-foreground py-8 text-sm">No upcoming matches</p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Recent Results */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-chart-2" />
-                  <CardTitle>Recent Results</CardTitle>
-                </div>
-                <Button asChild variant="ghost" size="sm">
-                  <Link to="/matches">View All<ChevronRight className="h-4 w-4 ml-2" /></Link>
-                </Button>
+                  })
+                ) : (
+                  <div className="col-span-2 p-8 text-center rounded-xl border border-dashed border-border/50 bg-card/30">
+                    <p className="text-sm text-muted-foreground">No upcoming fixtures scheduled.</p>
+                  </div>
+                )}
               </div>
-              <CardDescription>Latest finished matches</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-3">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <Skeleton key={i} className="h-20 w-full bg-muted" />
-                  ))}
-                </div>
-              ) : recentMatches.length > 0 ? (
-                <div className="space-y-3">
-                  {recentMatches.map((match) => {
-                     const { date } = formatTime(match.time);
-                     return (
-                      <Link key={match.id} to={`/matches/${match.id}`}>
-                        <div className="p-3 rounded-lg border border-border hover:bg-accent transition-colors">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2 text-sm">
-                              <Calendar className="h-3 w-3" />
-                              <span className="text-muted-foreground">{date}</span>
-                            </div>
-                            {getStatusBadge(match.status)}
-                          </div>
-                          <div className="grid grid-cols-3 gap-2 text-sm items-center">
-                            <span className="font-medium text-right">{match.home_team}</span>
-                            <div className="text-center">
-                              <span className="font-bold text-lg">
-                                {match.home_score} - {match.away_score}
-                              </span>
-                            </div>
-                            <span className="font-medium text-left">{match.away_team}</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground mt-1 text-center">
-                            {match.league}
-                          </div>
-                        </div>
-                      </Link>
-                    )
-                  })}
-                </div>
-              ) : (
-                <p className="text-center text-muted-foreground py-8 text-sm">No recent matches</p>
-              )}
-            </CardContent>
-          </Card>
+            </div>
+
+          </div>
         </div>
       </div>
     </MainLayout>

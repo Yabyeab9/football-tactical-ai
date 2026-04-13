@@ -1,7 +1,7 @@
-import requests
+import requests,os
 
-API_KEY = "2066a2baba1d5da56959d652bc41dfa9"
-
+API_KEY = os.getenv("FOOTBALL_API_KEY")
+#2066a2baba1d5da56959d652bc41dfa9
 headers = {
     "x-apisports-key": API_KEY
 }
