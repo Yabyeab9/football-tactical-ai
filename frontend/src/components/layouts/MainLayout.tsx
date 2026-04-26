@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
+
 import { AppSidebar } from './AppSidebar';
 import { AppHeader } from './AppHeader';
 
 interface MainLayoutProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 export function MainLayout({ children }: MainLayoutProps) {

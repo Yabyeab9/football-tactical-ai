@@ -1,64 +1,61 @@
-import { Link, useLocation } from 'react-router';
 import {
-  LayoutDashboard,
-  Trophy,
-  Users,
-  UserCircle,
-  Target,
-  Search,
-  Bot,
-  BarChart3,
-  Settings,
-  Menu,
   Activity,
-  AlertTriangle,
+  BrainCircuit,
+  ClipboardList,
+  LayoutDashboard,
   Shield,
-  Brain,
+  Menu,
+  ShieldAlert,
   Sparkles,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { cn } from '@/lib/utils';
+  Target,
+  Users,
+  UserRoundSearch,
+  WandSparkles,
+} from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
+
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-  { name: 'Matches', href: '/matches', icon: Activity },
-  { name: 'Teams', href: '/teams', icon: Users },
-  { name: 'Players', href: '/players', icon: UserCircle },
-  { name: 'Injury Analysis', href: '/injury-analysis', icon: AlertTriangle },
-  { name: 'Manager Analysis', href: '/manager-analysis', icon: Shield },
-  { name: 'AI Predictions', href: '/ai-predictions', icon: Brain },
-  { name: 'Undiscovered Insights', href: '/undiscovered-insights', icon: Sparkles },
-  { name: 'Tactical Lab', href: '/tactical-lab', icon: Target },
-  { name: 'Scouting', href: '/scouting', icon: Search },
-  { name: 'AI Assistant', href: '/ai-assistant', icon: Bot },
-  { name: 'Analytics', href: '/analytics', icon: BarChart3 },
-  { name: 'Competitions', href: '/competitions', icon: Trophy },
-  { name: 'Settings', href: '/settings', icon: Settings },
+  { name: "Overview Dashboard", href: "/", icon: LayoutDashboard, subtitle: "System intelligence snapshot" },
+  { name: "Live Matches", href: "/matches", icon: Activity, subtitle: "Multi-provider match feed" },
+  { name: "Teams", href: "/teams", icon: Users, subtitle: "Squads, coaches, and team strength" },
+  { name: "Managers", href: "/managers", icon: Shield, subtitle: "Coach style and tactical identity" },
+  { name: "Match Analysis Hub", href: "/analysis", icon: ClipboardList, subtitle: "Timeline and match context" },
+  { name: "Player Intelligence", href: "/players", icon: UserRoundSearch, subtitle: "Per-90 and contribution metrics" },
+  { name: "Tactical Engine", href: "/tactical-engine", icon: Target, subtitle: "Formations, edges, predictions" },
+  { name: "Injury Center", href: "/injury-center", icon: ShieldAlert, subtitle: "Risk watch and load management" },
+  { name: "AI Football Assistant", href: "/ai-assistant", icon: BrainCircuit, subtitle: "Manager-style analyst chat" },
+  { name: "Predictions Hub", href: "/predictions", icon: WandSparkles, subtitle: "Scenario board and outcomes" },
 ];
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const location = useLocation();
 
   return (
-    <nav className="space-y-1">
+    <nav className="space-y-2">
       {navigation.map((item) => {
-        const isActive = location.pathname === item.href;
+        const isActive = location.pathname === item.href || (item.href !== "/" && location.pathname.startsWith(item.href));
         return (
           <Link
             key={item.name}
             to={item.href}
             onClick={onNavigate}
             className={cn(
-              'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-lg transition-colors',
+              "flex items-start gap-3 rounded-2xl border px-4 py-3 transition-all",
               isActive
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                ? "border-primary/30 bg-primary/10 text-foreground shadow-sm"
+                : "border-transparent text-muted-foreground hover:border-border hover:bg-card"
             )}
           >
-            <item.icon className="h-5 w-5 shrink-0" />
-            {item.name}
+            <item.icon className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <div className="text-sm font-semibold">{item.name}</div>
+              <div className="text-xs text-muted-foreground">{item.subtitle}</div>
+            </div>
           </Link>
         );
       })}
@@ -66,31 +63,41 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function AppSidebar() {
+function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <aside className="hidden lg:block w-64 border-r border-border bg-sidebar shrink-0">
-      <div className="flex flex-col h-full">
-        <div className="p-6 border-b border-sidebar-border">
-          <Link to="/" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <Trophy className="h-5 w-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-sidebar-foreground">Football Tactical AI</h1>
-              <p className="text-xs text-muted-foreground">Advanced Analytics</p>
-            </div>
-          </Link>
-        </div>
-        <ScrollArea className="flex-1 p-4">
-          <NavLinks />
-        </ScrollArea>
-        <div className="p-4 border-t border-sidebar-border">
-          <div className="text-xs text-muted-foreground">
-            <p>Powered by StatsBomb Data</p>
-            <p className="mt-1">© 2026 Football Tactical AI</p>
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border/60 p-6">
+        <Link to="/" className="flex items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-[1.2rem] bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+            <Sparkles className="h-5 w-5" />
           </div>
+          <div>
+            <div className="text-lg font-black tracking-tight">Football Intelligence OS</div>
+            <div className="text-xs text-muted-foreground">AI-powered match operations platform</div>
+          </div>
+        </Link>
+      </div>
+
+      <ScrollArea className="flex-1 p-4">
+        <NavLinks onNavigate={onNavigate} />
+      </ScrollArea>
+
+      <div className="border-t border-border/60 p-4">
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+          <div className="text-sm font-semibold">Aggregation layer</div>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">
+            Live providers, historical intelligence, tactical inference, injury risk, and manager-style AI all route through the backend service layer.
+          </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+export function AppSidebar() {
+  return (
+    <aside className="hidden w-80 shrink-0 border-r border-border/60 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.14),_transparent_38%),linear-gradient(180deg,_rgba(15,23,42,0.02),_transparent)] lg:block">
+      <SidebarBody />
     </aside>
   );
 }
@@ -104,26 +111,13 @@ export function MobileNav() {
           <span className="sr-only">Toggle navigation menu</span>
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-64 p-0">
-        <div className="flex flex-col h-full">
-          <div className="p-6 border-b border-border">
-            <Link to="/" className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                <Trophy className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold">Football Tactical AI</h1>
-                <p className="text-xs text-muted-foreground">Advanced Analytics</p>
-              </div>
-            </Link>
-          </div>
-          <ScrollArea className="flex-1 p-4">
-            <NavLinks onNavigate={() => {
-              const closeButton = document.querySelector('[data-state="open"] button[aria-label="Close"]') as HTMLButtonElement;
-              closeButton?.click();
-            }} />
-          </ScrollArea>
-        </div>
+      <SheetContent side="left" className="w-80 p-0">
+        <SidebarBody
+          onNavigate={() => {
+            const closeButton = document.querySelector('[data-state="open"] button[aria-label="Close"]') as HTMLButtonElement | null;
+            closeButton?.click();
+          }}
+        />
       </SheetContent>
     </Sheet>
   );

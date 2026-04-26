@@ -1,148 +1,116 @@
-import { useEffect, useState } from 'react';
-import { MainLayout } from '@/components/layouts/MainLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { getPlayers, searchPlayers } from '@/db/api';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Link } from 'react-router';
-import { UserCircle, MapPin, Search } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import type { Player } from '@/types';
+import { ArrowRight, Gauge, Radar, UserRoundSearch } from "lucide-react";
+import { Link } from "react-router-dom";
+
+import { MainLayout } from "@/components/layouts/MainLayout";
+import { PageHero } from "@/components/platform/PageHero";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getDashboardSummary } from "@/db/api";
+import { usePollingResource } from "@/hooks/use-polling-resource";
 
 export default function Players() {
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-
-  useEffect(() => {
-    async function loadPlayers() {
-      try {
-        const data = await getPlayers(100, 0);
-        setPlayers(data);
-      } catch (error) {
-        console.error('Error loading players:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadPlayers();
-  }, []);
-
-  useEffect(() => {
-    if (searchTerm.length >= 2) {
-      const timer = setTimeout(async () => {
-        try {
-          const data = await searchPlayers(searchTerm);
-          setPlayers(data);
-        } catch (error) {
-          console.error('Error searching players:', error);
-        }
-      }, 300);
-      return () => clearTimeout(timer);
-    } else if (searchTerm.length === 0) {
-      loadInitialPlayers();
-    }
-  }, [searchTerm]);
-
-  async function loadInitialPlayers() {
-    try {
-      const data = await getPlayers(100, 0);
-      setPlayers(data);
-    } catch (error) {
-      console.error('Error loading players:', error);
-    }
-  }
+  const { data, loading, error } = usePollingResource({
+    fetcher: getDashboardSummary,
+    intervalMs: 45000,
+  });
 
   return (
     <MainLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Players</h1>
-          <p className="text-muted-foreground mt-2">
-            Individual player statistics and performance metrics
-          </p>
+      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        <PageHero
+          eyebrow="Player Intelligence"
+          title="Per-90 output, availability context, and player risk in one module."
+          description="The backend assembles person-level intelligence from football-data.org and combines it with the wider platform context so we can move from workload to output without stitching datasets by hand."
+          badge="Scouting + operations"
+        />
+
+        {error ? (
+          <Card className="border-destructive/30">
+            <CardContent className="py-8 text-sm text-destructive">{error}</CardContent>
+          </Card>
+        ) : null}
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {loading
+            ? Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-72 rounded-[1.75rem]" />)
+            : data?.featured_players.map((entry) => (
+                <Card key={entry.player.id} className="rounded-[1.75rem] border-border/60">
+                  <CardContent className="flex h-full flex-col gap-5 p-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-xl font-semibold">{entry.player.name}</div>
+                        <div className="text-sm text-muted-foreground">{entry.player.current_team?.name}</div>
+                      </div>
+                      <Badge variant={entry.risk.status === "HIGH_RISK" ? "destructive" : entry.risk.status === "MONITOR" ? "secondary" : "outline"}>
+                        {entry.risk.status}
+                      </Badge>
+                    </div>
+
+                    <div className="grid gap-3">
+                      <div className="rounded-2xl bg-muted/30 px-4 py-3">
+                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Goal contributions / 90</div>
+                        <div className="mt-1 text-2xl font-black">{entry.analytics.goal_contributions_per_90 ?? 0}</div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="rounded-2xl bg-muted/30 px-4 py-3">
+                          <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Starts</div>
+                          <div className="mt-1 text-xl font-semibold">{entry.analytics.starts ?? 0}</div>
+                        </div>
+                        <div className="rounded-2xl bg-muted/30 px-4 py-3">
+                          <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Availability</div>
+                          <div className="mt-1 text-xl font-semibold">{entry.analytics.availability_rate ?? 0}%</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Gauge className="h-4 w-4 text-primary" />
+                      Risk score {entry.risk.score}
+                    </div>
+
+                    <Button asChild className="mt-auto">
+                      <Link to={`/players/${entry.player.id}`}>
+                        Open intelligence
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
         </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Search Players</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search by player name..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {loading ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 9 }).map((_, i) => (
-              <Card key={i}>
-                <CardHeader>
-                  <Skeleton className="h-6 w-32 bg-muted" />
-                  <Skeleton className="h-4 w-24 bg-muted" />
-                </CardHeader>
-              </Card>
-            ))}
-          </div>
-        ) : players.length > 0 ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {players.map((player) => (
-              <Link key={player.player_id} to={`/players/${player.player_id}`}>
-                <Card className="hover:shadow-hover transition-shadow h-full">
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <CardTitle className="flex items-center gap-2 text-lg">
-                          <UserCircle className="h-5 w-5 text-primary" />
-                          {player.player_name}
-                        </CardTitle>
-                        {player.player_nickname && (
-                          <p className="text-sm text-muted-foreground mt-1">
-                            "{player.player_nickname}"
-                          </p>
-                        )}
-                      </div>
-                      {player.jersey_number && (
-                        <Badge variant="outline" className="text-lg">
-                          #{player.jersey_number}
-                        </Badge>
-                      )}
-                    </div>
-                    <CardDescription className="space-y-1">
-                      {player.position && (
-                        <div className="flex items-center gap-1">
-                          <Badge variant="secondary">{player.position}</Badge>
-                        </div>
-                      )}
-                      {player.country && (
-                        <div className="flex items-center gap-1 text-xs">
-                          <MapPin className="h-3 w-3" />
-                          {player.country}
-                        </div>
-                      )}
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <UserCircle className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">
-                {searchTerm ? 'No players found' : 'No players available'}
-              </p>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="border-border/60">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <Radar className="h-5 w-5 text-primary" />
+                What this module focuses on
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>Availability and minutes load</p>
+              <p>Goal and assist contribution rates</p>
+              <p>Player role context inside the current team</p>
+              <p>Operational links into the injury and tactical modules</p>
             </CardContent>
           </Card>
-        )}
+
+          <Card className="border-border/60">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-xl">
+                <UserRoundSearch className="h-5 w-5 text-primary" />
+                Platform usage
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>Use Player Intelligence for role-based review.</p>
+              <p>Open Tactical Engine when you want match-level leverage.</p>
+              <p>Use Injury Center to understand whether high output is sustainable.</p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </MainLayout>
   );

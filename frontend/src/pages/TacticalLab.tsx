@@ -1,214 +1,199 @@
-import { MainLayout } from '@/components/layouts/MainLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Target, TrendingUp, Zap, Activity } from 'lucide-react';
+import { Brain, Radar, Swords, WandSparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { MainLayout } from "@/components/layouts/MainLayout";
+import { PageHero } from "@/components/platform/PageHero";
+import { ProviderStatusStrip } from "@/components/platform/ProviderStatusStrip";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getLiveMatches, getTacticalAnalysis, type TacticalAnalysisResponse } from "@/db/api";
+import { usePollingResource } from "@/hooks/use-polling-resource";
 
 export default function TacticalLab() {
+  const { data: liveData, loading: loadingLive } = usePollingResource({
+    fetcher: getLiveMatches,
+    intervalMs: 30000,
+  });
+  const [selectedMatchId, setSelectedMatchId] = useState<string>("");
+  const [analysis, setAnalysis] = useState<TacticalAnalysisResponse | null>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(true);
+
+  useEffect(() => {
+    if (liveData?.matches.length && !selectedMatchId) {
+      setSelectedMatchId(liveData.matches[0].id);
+    }
+  }, [liveData, selectedMatchId]);
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      if (!selectedMatchId) {
+        return;
+      }
+      setLoadingAnalysis(true);
+      try {
+        const result = await getTacticalAnalysis(selectedMatchId);
+        if (active) {
+          setAnalysis(result);
+        }
+      } finally {
+        if (active) {
+          setLoadingAnalysis(false);
+        }
+      }
+    };
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, [selectedMatchId]);
+
   return (
     <MainLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Tactical Lab</h1>
-          <p className="text-muted-foreground mt-2">
-            Advanced tactical analysis tools for in-depth match insights
-          </p>
-        </div>
+      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        <PageHero
+          eyebrow="Tactical Engine"
+          title="Provider-backed tactical inference for formations, strengths, weaknesses, and likely outcomes."
+          description="This module is the coaching console: formation snapshots, attacking pressure, tactical warnings, and probabilistic outcome framing grounded in the backend tactical engine."
+          badge="Tactical inference"
+        />
 
-        <Tabs defaultValue="pass-networks" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
-            <TabsTrigger value="pass-networks">Pass Networks</TabsTrigger>
-            <TabsTrigger value="progressive">Progressive Passes</TabsTrigger>
-            <TabsTrigger value="pressing">Pressing Intensity</TabsTrigger>
-            <TabsTrigger value="possession">Possession Chains</TabsTrigger>
-          </TabsList>
+        <Card className="border-border/60">
+          <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <CardTitle className="text-xl">Choose a match</CardTitle>
+            {loadingLive ? (
+              <Skeleton className="h-10 w-72 rounded-2xl" />
+            ) : (
+              <Select value={selectedMatchId} onValueChange={setSelectedMatchId}>
+                <SelectTrigger className="w-full lg:w-[30rem]">
+                  <SelectValue placeholder="Select a match for tactical analysis" />
+                </SelectTrigger>
+                <SelectContent>
+                  {liveData?.matches.map((match) => (
+                    <SelectItem key={match.id} value={match.id}>
+                      {match.home_team.name} vs {match.away_team.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </CardHeader>
+        </Card>
 
-          <TabsContent value="pass-networks" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="h-5 w-5 text-primary" />
-                  Pass Network Analysis
-                </CardTitle>
-                <CardDescription>
-                  Visualize passing patterns and player connections
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                  <div className="text-center space-y-2">
-                    <Target className="h-12 w-12 mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Pass network visualization will appear here
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Select a match to view pass networks
-                    </p>
+        {loadingAnalysis || !analysis ? (
+          <Skeleton className="h-[34rem] w-full rounded-[2rem]" />
+        ) : (
+          <Card className="border-border/60">
+            <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <CardTitle className="text-2xl">
+                      {analysis.match.home_team.name} vs {analysis.match.away_team.name}
+                    </CardTitle>
+                    <div className="mt-2 flex items-center gap-2">
+                      <Badge variant="outline">{analysis.match.status}</Badge>
+                      <Badge variant="secondary">{analysis.match.competition.name}</Badge>
+                    </div>
                   </div>
-                </div>
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Key Metrics</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Pass completion rate</li>
-                      <li>• Average pass length</li>
-                      <li>• Key passing lanes</li>
-                    </ul>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Player Connections</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Most frequent partnerships</li>
-                      <li>• Pass exchange volume</li>
-                      <li>• Connection strength</li>
-                    </ul>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Insights</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Build-up patterns</li>
-                      <li>• Attacking structure</li>
-                      <li>• Defensive shape</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              <ProviderStatusStrip statuses={analysis.provider_status} />
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="formations" className="space-y-4">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="formations">Formations</TabsTrigger>
+                  <TabsTrigger value="battle">Battle Map</TabsTrigger>
+                  <TabsTrigger value="prediction">Prediction</TabsTrigger>
+                </TabsList>
 
-          <TabsContent value="progressive" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-primary" />
-                  Progressive Passes
-                </CardTitle>
-                <CardDescription>
-                  Track passes that move the ball significantly towards the opponent's goal
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                  <div className="text-center space-y-2">
-                    <TrendingUp className="h-12 w-12 mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Progressive passes visualization
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Analyze forward ball progression
-                    </p>
+                <TabsContent value="formations" className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Card className="border-border/60 bg-muted/25">
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-2 text-sm font-semibold">
+                          <Radar className="h-4 w-4 text-primary" />
+                          Home Shape
+                        </div>
+                        <div className="mt-4 text-3xl font-black">{analysis.analysis.formations.home}</div>
+                        <div className="mt-2 text-sm text-muted-foreground">{analysis.match.home_team.name}</div>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-border/60 bg-muted/25">
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-2 text-sm font-semibold">
+                          <Radar className="h-4 w-4 text-primary" />
+                          Away Shape
+                        </div>
+                        <div className="mt-4 text-3xl font-black">{analysis.analysis.formations.away}</div>
+                        <div className="mt-2 text-sm text-muted-foreground">{analysis.match.away_team.name}</div>
+                      </CardContent>
+                    </Card>
                   </div>
-                </div>
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Definition</h4>
-                    <p className="text-sm text-muted-foreground">
-                      A progressive pass moves the ball at least 10 yards closer to the opponent's goal
-                      or into the penalty area from outside.
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Analysis</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Identifies players who excel at breaking lines and advancing play through passing.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                </TabsContent>
 
-          <TabsContent value="pressing" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-primary" />
-                  Pressing Intensity
-                </CardTitle>
-                <CardDescription>
-                  Analyze defensive pressure and PPDA (Passes Per Defensive Action)
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                  <div className="text-center space-y-2">
-                    <Zap className="h-12 w-12 mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Pressing intensity heat map
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Visualize defensive pressure zones
-                    </p>
+                <TabsContent value="battle" className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Card className="border-border/60">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <Swords className="h-5 w-5 text-primary" />
+                          Strengths
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {analysis.analysis.strengths.map((item) => (
+                          <div key={item} className="rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm">{item}</div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                    <Card className="border-border/60">
+                      <CardHeader>
+                        <CardTitle className="flex items-center gap-2 text-lg">
+                          <Brain className="h-5 w-5 text-primary" />
+                          Weaknesses
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {analysis.analysis.weaknesses.map((item) => (
+                          <div key={item} className="rounded-2xl bg-amber-500/10 px-4 py-3 text-sm">{item}</div>
+                        ))}
+                      </CardContent>
+                    </Card>
                   </div>
-                </div>
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">PPDA</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Lower values indicate more intense pressing
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Pressure Zones</h4>
-                    <p className="text-sm text-muted-foreground">
-                      High, medium, and low press areas
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Success Rate</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Percentage of successful pressures
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                </TabsContent>
 
-          <TabsContent value="possession" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5 text-primary" />
-                  Possession Chains
-                </CardTitle>
-                <CardDescription>
-                  Track sequences of possession and ball progression
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                  <div className="text-center space-y-2">
-                    <Activity className="h-12 w-12 mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Possession chain visualization
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Analyze ball movement sequences
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-6 grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Chain Analysis</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Average chain length</li>
-                      <li>• Successful sequences</li>
-                      <li>• Territory gained</li>
-                    </ul>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Outcomes</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1">
-                      <li>• Shots created</li>
-                      <li>• Turnovers</li>
-                      <li>• Final third entries</li>
-                    </ul>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                <TabsContent value="prediction" className="space-y-4">
+                  <Card className="border-border/60 bg-muted/25">
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-2 text-sm font-semibold">
+                        <WandSparkles className="h-4 w-4 text-primary" />
+                        Engine verdict
+                      </div>
+                      <p className="mt-4 text-lg font-semibold">{analysis.analysis.prediction.verdict}</p>
+                      <div className="mt-6 grid grid-cols-3 gap-3">
+                        <div className="rounded-2xl bg-background px-4 py-4 text-center">
+                          <div className="text-2xl font-black">{analysis.analysis.prediction.home_win}%</div>
+                          <div className="text-sm text-muted-foreground">Home</div>
+                        </div>
+                        <div className="rounded-2xl bg-background px-4 py-4 text-center">
+                          <div className="text-2xl font-black">{analysis.analysis.prediction.draw}%</div>
+                          <div className="text-sm text-muted-foreground">Draw</div>
+                        </div>
+                        <div className="rounded-2xl bg-background px-4 py-4 text-center">
+                          <div className="text-2xl font-black">{analysis.analysis.prediction.away_win}%</div>
+                          <div className="text-sm text-muted-foreground">Away</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </MainLayout>
   );

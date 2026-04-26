@@ -1,240 +1,99 @@
- import { useEffect, useState } from 'react';
-import { MainLayout } from '@/components/layouts/MainLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { AlertTriangle, TrendingUp, Activity, Calendar } from 'lucide-react';
-import { getInjuryPronePlayersAnalysis } from '@/db/api';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import type { InjuryRiskAssessment } from '@/types';
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from 'recharts';
+import { AlertTriangle, Clock3, ShieldAlert } from "lucide-react";
+
+import { MainLayout } from "@/components/layouts/MainLayout";
+import { MetricCard } from "@/components/platform/MetricCard";
+import { PageHero } from "@/components/platform/PageHero";
+import { ProviderStatusStrip } from "@/components/platform/ProviderStatusStrip";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getInjuries } from "@/db/api";
+import { usePollingResource } from "@/hooks/use-polling-resource";
 
 export default function InjuryAnalysis() {
-  const [injuryData, setInjuryData] = useState<InjuryRiskAssessment[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const data = await getInjuryPronePlayersAnalysis();
-        setInjuryData(data.slice(0, 20));
-      } catch (error) {
-        console.error('Error loading injury data:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadData();
-  }, []);
-
-  const getRiskLevel = (score: number) => {
-    if (score >= 7) return { label: 'High Risk', variant: 'destructive' as const };
-    if (score >= 4) return { label: 'Moderate Risk', variant: 'secondary' as const };
-    return { label: 'Low Risk', variant: 'outline' as const };
-  };
-
-  const chartData = injuryData.slice(0, 10).map(player => ({
-    name: player.player_name.split(' ').pop(),
-    injuries: player.total_injuries,
-    matches_missed: player.total_matches_missed,
-    risk_score: player.injury_risk_score,
-  }));
+  const { data, loading, error } = usePollingResource({
+    fetcher: getInjuries,
+    intervalMs: 60000,
+  });
 
   return (
     <MainLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Injury Analysis</h1>
-          <p className="text-muted-foreground mt-2">
-            Track injury-prone players, patterns, and risk assessments
-          </p>
+      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        <PageHero
+          eyebrow="Injury Center"
+          title="Operational injury watch built from real player availability and load data."
+          description="Where public APIs do not expose direct medical states, the backend derives risk from starts, minutes, recent congestion, and rotation patterns so the module stays grounded in real provider data."
+          badge="Load and risk monitoring"
+        />
+
+        {error ? (
+          <Card className="border-destructive/30">
+            <CardContent className="py-8 text-sm text-destructive">{error}</CardContent>
+          </Card>
+        ) : null}
+
+        <div className="grid gap-4 md:grid-cols-3">
+          {loading ? (
+            Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-36 rounded-[1.75rem]" />)
+          ) : (
+            <>
+              <MetricCard label="High Risk" value={data?.summary.high_risk ?? 0} hint="Players needing immediate workload review" icon={AlertTriangle} />
+              <MetricCard label="Monitor" value={data?.summary.monitor ?? 0} hint="Players in managed workload territory" icon={Clock3} />
+              <MetricCard label="Available" value={data?.summary.available ?? 0} hint="Players without major load flags" icon={ShieldAlert} />
+            </>
+          )}
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">High Risk Players</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {injuryData.filter(p => p.injury_risk_score >= 7).length}
-              </div>
-              <p className="text-xs text-muted-foreground">Risk score ≥ 7</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Injuries</CardTitle>
-              <Activity className="h-4 w-4 text-chart-2" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {injuryData.reduce((sum, p) => sum + p.total_injuries, 0)}
-              </div>
-              <p className="text-xs text-muted-foreground">Across all players</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Matches Missed</CardTitle>
-              <Calendar className="h-4 w-4 text-chart-3" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {injuryData.reduce((sum, p) => sum + p.total_matches_missed, 0)}
-              </div>
-              <p className="text-xs text-muted-foreground">Total games lost</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Recurring Issues</CardTitle>
-              <TrendingUp className="h-4 w-4 text-chart-4" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {injuryData.reduce((sum, p) => sum + p.recurring_injuries, 0)}
-              </div>
-              <p className="text-xs text-muted-foreground">Repeated injuries</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Injury Risk Comparison</CardTitle>
-            <CardDescription>Top 10 players by injury risk score</CardDescription>
+        <Card className="border-border/60">
+          <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <CardTitle className="text-xl">Provider Coverage</CardTitle>
+            {loading ? <Skeleton className="h-10 w-64 rounded-2xl" /> : <ProviderStatusStrip statuses={data?.provider_status ?? []} />}
           </CardHeader>
-          <CardContent>
-            {loading ? (
-              <Skeleton className="h-80 w-full bg-muted" />
-            ) : (
-              <ResponsiveContainer width="100%" height={320}>
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="injuries" fill="hsl(var(--chart-1))" name="Total Injuries" />
-                  <Bar dataKey="matches_missed" fill="hsl(var(--chart-2))" name="Matches Missed" />
-                  <Bar dataKey="risk_score" fill="hsl(var(--destructive))" name="Risk Score" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-border/60">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              Injury-Prone Players
-            </CardTitle>
-            <CardDescription>
-              Players ranked by injury risk assessment
-            </CardDescription>
+            <CardTitle className="text-xl">Risk Watchlist</CardTitle>
           </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 10 }).map((_, i) => (
-                  <Skeleton key={i} className="h-20 w-full bg-muted" />
-                ))}
-              </div>
-            ) : injuryData.length > 0 ? (
-              <div className="space-y-3">
-                {injuryData.map((player, index) => {
-                  const risk = getRiskLevel(player.injury_risk_score);
-                  return (
-                    <div
-                      key={player.player_id}
-                      className="p-4 rounded-lg border border-border hover:bg-accent transition-colors"
-                    >
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-3">
-                            <span className="text-2xl font-bold text-muted-foreground">
-                              #{index + 1}
-                            </span>
-                            <div>
-                              <h3 className="font-semibold">{player.player_name}</h3>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge variant={risk.variant}>{risk.label}</Badge>
-                                <span className="text-sm text-muted-foreground">
-                                  Risk Score: {player.injury_risk_score.toFixed(1)}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">Total Injuries</span>
-                              <p className="font-medium">{player.total_injuries}</p>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Recurring</span>
-                              <p className="font-medium">{player.recurring_injuries}</p>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Days Out</span>
-                              <p className="font-medium">{player.total_days_out}</p>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Matches Missed</span>
-                              <p className="font-medium">{player.total_matches_missed}</p>
-                            </div>
-                          </div>
+          <CardContent className="space-y-4">
+            {loading
+              ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-[1.5rem]" />)
+              : data?.watchlist.map((player) => (
+                  <div key={player.player_id} className="rounded-[1.5rem] border border-border/60 p-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="text-xl font-semibold">{player.player_name}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {player.team.name} • {player.position}
                         </div>
                       </div>
+                      <Badge variant={player.status === "HIGH_RISK" ? "destructive" : player.status === "MONITOR" ? "secondary" : "outline"}>
+                        {player.status} • {player.risk_score}
+                      </Badge>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-center text-muted-foreground py-8">No injury data available</p>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="pitch-gradient">
-          <CardHeader>
-            <CardTitle>Injury Prevention Insights</CardTitle>
-            <CardDescription>Key findings from injury analysis</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <h4 className="font-semibold text-sm">Common Patterns</h4>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>• Hamstring injuries are most recurring</li>
-                  <li>• Players with 3+ injuries show 60% higher risk</li>
-                  <li>• Average recovery time: 25 days</li>
-                  <li>• Peak injury period: Mid-season congestion</li>
-                </ul>
-              </div>
-              <div className="space-y-2">
-                <h4 className="font-semibold text-sm">Risk Factors</h4>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>• High minutes played (90+ per week)</li>
-                  <li>• Previous injury history</li>
-                  <li>• Intense playing style</li>
-                  <li>• Insufficient recovery time</li>
-                </ul>
-              </div>
-            </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-3">
+                      <div className="rounded-2xl bg-muted/30 px-4 py-3 text-sm">
+                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Average minutes</div>
+                        <div className="mt-1 font-semibold">{player.average_minutes}</div>
+                      </div>
+                      <div className="rounded-2xl bg-muted/30 px-4 py-3 text-sm">
+                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Starts recent</div>
+                        <div className="mt-1 font-semibold">{player.starts_recent}</div>
+                      </div>
+                      <div className="rounded-2xl bg-muted/30 px-4 py-3 text-sm">
+                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Minutes recent</div>
+                        <div className="mt-1 font-semibold">{player.minutes_played_recent}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {player.reasons.map((reason) => (
+                        <Badge key={reason} variant="outline" className="whitespace-normal text-left">
+                          {reason}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
           </CardContent>
         </Card>
       </div>

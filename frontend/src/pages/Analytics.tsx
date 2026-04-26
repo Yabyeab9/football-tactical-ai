@@ -1,217 +1,218 @@
-import { MainLayout } from '@/components/layouts/MainLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { MapPin, Target, TrendingUp, Users } from 'lucide-react';
+import { BarChart3, ClipboardList, Radar } from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { MainLayout } from "@/components/layouts/MainLayout";
+import { PageHero } from "@/components/platform/PageHero";
+import { ProviderStatusStrip } from "@/components/platform/ProviderStatusStrip";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getLiveMatches, getTacticalAnalysis, type TacticalAnalysisResponse } from "@/db/api";
+import { usePollingResource } from "@/hooks/use-polling-resource";
 
 export default function Analytics() {
+  const { data: liveData, loading: loadingLive } = usePollingResource({
+    fetcher: getLiveMatches,
+    intervalMs: 30000,
+  });
+  const [selectedMatchId, setSelectedMatchId] = useState<string>("");
+  const [analysis, setAnalysis] = useState<TacticalAnalysisResponse | null>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(true);
+
+  useEffect(() => {
+    if (liveData?.matches.length && !selectedMatchId) {
+      setSelectedMatchId(liveData.matches[0].id);
+    }
+  }, [liveData, selectedMatchId]);
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      if (!selectedMatchId) {
+        return;
+      }
+      setLoadingAnalysis(true);
+      try {
+        const result = await getTacticalAnalysis(selectedMatchId);
+        if (active) {
+          setAnalysis(result);
+        }
+      } finally {
+        if (active) {
+          setLoadingAnalysis(false);
+        }
+      }
+    };
+
+    load();
+    return () => {
+      active = false;
+    };
+  }, [selectedMatchId]);
+
+  const homeForm = analysis ? (analysis.context.home_form ?? analysis.context.homeForm) : undefined;
+  const awayForm = analysis ? (analysis.context.away_form ?? analysis.context.awayForm) : undefined;
+
   return (
     <MainLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Analytics</h1>
-          <p className="text-muted-foreground mt-2">
-            Comprehensive analytics and advanced metrics
-          </p>
-        </div>
+      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        <PageHero
+          eyebrow="Match Analysis Hub"
+          title="Live context, tactical shape, and event narrative in one workflow."
+          description="This module bridges the live feed and the tactical engine so we can inspect formations, match control, recent form, and the event story without leaving the analysis surface."
+          badge={selectedMatchId ? "Analysis live" : "Waiting for feed"}
+        />
 
-        <Tabs defaultValue="influence" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
-            <TabsTrigger value="influence">Influence Maps</TabsTrigger>
-            <TabsTrigger value="xg">xG Shot Maps</TabsTrigger>
-            <TabsTrigger value="carry">Carry Distance</TabsTrigger>
-            <TabsTrigger value="comparison">Player Comparison</TabsTrigger>
-          </TabsList>
+        <Card className="border-border/60">
+          <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <CardTitle className="text-xl">Match Selector</CardTitle>
+            {loadingLive ? (
+              <Skeleton className="h-10 w-72 rounded-2xl" />
+            ) : (
+              <Select value={selectedMatchId} onValueChange={setSelectedMatchId}>
+                <SelectTrigger className="w-full lg:w-[28rem]">
+                  <SelectValue placeholder="Select a match" />
+                </SelectTrigger>
+                <SelectContent>
+                  {liveData?.matches.map((match) => (
+                    <SelectItem key={match.id} value={match.id}>
+                      {match.home_team.name} vs {match.away_team.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </CardHeader>
+        </Card>
 
-          <TabsContent value="influence" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MapPin className="h-5 w-5 text-primary" />
-                  Player Influence Maps
+        {loadingAnalysis || !analysis ? (
+          <Skeleton className="h-[34rem] w-full rounded-[2rem]" />
+        ) : (
+          <Card className="border-border/60">
+            <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <CardTitle className="text-2xl">
+                  {analysis.match.home_team.name} vs {analysis.match.away_team.name}
                 </CardTitle>
-                <CardDescription>
-                  Visualize player activity and impact across the pitch
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center pitch-gradient">
-                  <div className="text-center space-y-2">
-                    <MapPin className="h-12 w-12 mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Player influence heat map
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Select a player to view their influence zones
-                    </p>
-                  </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <Badge variant="outline">{analysis.match.status}</Badge>
+                  <Badge variant="secondary">{analysis.match.competition.name}</Badge>
                 </div>
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Touch Zones</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Areas where player receives and controls the ball
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Action Density</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Frequency of actions in different pitch areas
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Impact Score</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Weighted contribution in each zone
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+              </div>
+              <ProviderStatusStrip statuses={analysis.provider_status} />
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="summary" className="space-y-4">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="summary">Summary</TabsTrigger>
+                  <TabsTrigger value="timeline">Timeline</TabsTrigger>
+                  <TabsTrigger value="form">Form Context</TabsTrigger>
+                </TabsList>
 
-          <TabsContent value="xg" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Target className="h-5 w-5 text-primary" />
-                  xG Shot Maps
-                </CardTitle>
-                <CardDescription>
-                  Expected goals visualization with shot locations and quality
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center pitch-gradient">
-                  <div className="text-center space-y-2">
-                    <Target className="h-12 w-12 mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      xG shot map visualization
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Shot locations sized by xG value
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-6 grid gap-4 md:grid-cols-4">
-                  <div className="text-center p-4 bg-accent rounded-lg">
-                    <div className="text-2xl font-bold text-primary">0.00</div>
-                    <div className="text-xs text-muted-foreground mt-1">Total xG</div>
-                  </div>
-                  <div className="text-center p-4 bg-accent rounded-lg">
-                    <div className="text-2xl font-bold text-chart-2">0</div>
-                    <div className="text-xs text-muted-foreground mt-1">Shots</div>
-                  </div>
-                  <div className="text-center p-4 bg-accent rounded-lg">
-                    <div className="text-2xl font-bold text-chart-3">0</div>
-                    <div className="text-xs text-muted-foreground mt-1">On Target</div>
-                  </div>
-                  <div className="text-center p-4 bg-accent rounded-lg">
-                    <div className="text-2xl font-bold text-chart-4">0</div>
-                    <div className="text-xs text-muted-foreground mt-1">Goals</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                <TabsContent value="summary" className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <Card className="border-border/60 bg-muted/25">
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-2 text-sm font-semibold">
+                          <Radar className="h-4 w-4 text-primary" />
+                          Formations
+                        </div>
+                        <div className="mt-4 space-y-2 text-sm">
+                          <div>{analysis.match.home_team.name}: {analysis.analysis.formations.home}</div>
+                          <div>{analysis.match.away_team.name}: {analysis.analysis.formations.away}</div>
+                        </div>
+                      </CardContent>
+                    </Card>
 
-          <TabsContent value="carry" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-primary" />
-                  Carry Distance Metrics
-                </CardTitle>
-                <CardDescription>
-                  Analyze ball-carrying actions and progressive movement
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                  <div className="text-center space-y-2">
-                    <TrendingUp className="h-12 w-12 mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Carry distance visualization
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Track ball progression through dribbling
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-6 grid gap-4 md:grid-cols-3">
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Total Distance</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Cumulative distance covered while carrying the ball
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Progressive Carries</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Carries that move the ball significantly forward
-                    </p>
-                  </div>
-                  <div className="space-y-2">
-                    <h4 className="text-sm font-semibold">Final Third Entries</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Successful carries into attacking areas
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+                    <Card className="border-border/60 bg-muted/25">
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-2 text-sm font-semibold">
+                          <BarChart3 className="h-4 w-4 text-primary" />
+                          Home Metrics
+                        </div>
+                        <div className="mt-4 space-y-2 text-sm">
+                          <div>Possession: {analysis.analysis.metrics.home.possessionTrend ?? analysis.analysis.metrics.home.possession_trend ?? 0}%</div>
+                          <div>Projected shots: {analysis.analysis.metrics.home.projectedShots ?? analysis.analysis.metrics.home.projected_shots ?? 0}</div>
+                          <div>Momentum: {analysis.analysis.momentum?.home ?? analysis.team_analysis.momentum ?? 0}</div>
+                        </div>
+                      </CardContent>
+                    </Card>
 
-          <TabsContent value="comparison" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5 text-primary" />
-                  Player Comparison
-                </CardTitle>
-                <CardDescription>
-                  Compare player statistics and performance metrics
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
+                    <Card className="border-border/60 bg-muted/25">
+                      <CardContent className="p-5">
+                        <div className="flex items-center gap-2 text-sm font-semibold">
+                          <ClipboardList className="h-4 w-4 text-primary" />
+                          Model Verdict
+                        </div>
+                        <div className="mt-4 text-sm text-muted-foreground">{analysis.analysis.prediction.verdict}</div>
+                      </CardContent>
+                    </Card>
+                  </div>
+
                   <div className="grid gap-4 md:grid-cols-2">
-                    <div className="p-6 bg-accent rounded-lg text-center">
-                      <Users className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                      <p className="text-sm font-medium">Player 1</p>
-                      <p className="text-xs text-muted-foreground mt-1">Select a player</p>
+                    <div className="space-y-3">
+                      {analysis.analysis.strengths.map((item) => (
+                        <div key={item} className="rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm">
+                          {item}
+                        </div>
+                      ))}
                     </div>
-                    <div className="p-6 bg-accent rounded-lg text-center">
-                      <Users className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                      <p className="text-sm font-medium">Player 2</p>
-                      <p className="text-xs text-muted-foreground mt-1">Select a player</p>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <h4 className="text-sm font-semibold">Comparison Metrics</h4>
-                    <div className="grid gap-2 text-sm">
-                      <div className="flex items-center justify-between p-2 bg-muted rounded">
-                        <span className="text-muted-foreground">Pass Completion %</span>
-                        <span className="font-medium">-</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-muted rounded">
-                        <span className="text-muted-foreground">Progressive Passes</span>
-                        <span className="font-medium">-</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-muted rounded">
-                        <span className="text-muted-foreground">xG per 90</span>
-                        <span className="font-medium">-</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-muted rounded">
-                        <span className="text-muted-foreground">Carry Distance</span>
-                        <span className="font-medium">-</span>
-                      </div>
+                    <div className="space-y-3">
+                      {analysis.analysis.weaknesses.map((item) => (
+                        <div key={item} className="rounded-2xl bg-amber-500/10 px-4 py-3 text-sm">
+                          {item}
+                        </div>
+                      ))}
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+                </TabsContent>
+
+                <TabsContent value="timeline" className="space-y-4">
+                  {analysis.timeline.length > 0 ? (
+                    analysis.timeline.map((event) => (
+                      <div key={`${event.minute}-${event.description}`} className="rounded-2xl border border-border/60 p-4">
+                        <div className="font-semibold">{event.minute}' • {event.type}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {event.team} • {event.description}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
+                      This provider snapshot does not include a rich timeline for the selected match.
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="form" className="space-y-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <Card className="border-border/60">
+                      <CardHeader>
+                        <CardTitle className="text-lg">{analysis.match.home_team.name}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div>Recent form: {(homeForm?.form ?? []).join(" • ") || "N/A"}</div>
+                        <div>Points per match: {homeForm?.points_per_match ?? homeForm?.pointsPerMatch ?? 0}</div>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-border/60">
+                      <CardHeader>
+                        <CardTitle className="text-lg">{analysis.match.away_team.name}</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-2 text-sm">
+                        <div>Recent form: {(awayForm?.form ?? []).join(" • ") || "N/A"}</div>
+                        <div>Points per match: {awayForm?.points_per_match ?? awayForm?.pointsPerMatch ?? 0}</div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </MainLayout>
   );

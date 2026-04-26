@@ -1,894 +1,749 @@
-import { supabase } from './supabase';
-import type {
-  Competition,
-  Team,
-  Match,
-  Player,
-  Event,
-  TacticalMetric,
-  PlayerStats,
-  Manager,
-  ManagerPerformance,
-  Injury,
-  InjuryRiskAssessment,
-  AIPrediction,
-  UndiscoveredMetric,
-} from '@/types';
+import axios, { type AxiosError } from "axios";
 
-// Competitions API
-export async function getCompetitions() {
-  const { data, error } = await supabase
-    .from('competitions')
-    .select('*')
-    .order('competition_name');
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000",
+  timeout: 20000,
+});
 
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Competition[];
-}
-
-export async function getCompetitionById(competitionId: number) {
-  const { data, error } = await supabase
-    .from('competitions')
-    .select('*')
-    .eq('competition_id', competitionId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data as Competition | null;
-}
-
-// Teams API
-export async function getTeams() {
-  const { data, error } = await supabase
-    .from('teams')
-    .select('*')
-    .order('team_name');
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Team[];
-}
-
-export async function getTeamById(teamId: number) {
-  const { data, error } = await supabase
-    .from('teams')
-    .select('*')
-    .eq('team_id', teamId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data as Team | null;
-}
-
-// Matches API
-export async function getMatches(
-  limit = 50,
-  offset = 0,
-  filters?: {
-    competition_id?: number;
-    team_id?: number;
-    season_name?: string;
-    sort_by?: 'date' | 'competition' | 'match_week' | 'goals';
-    sort_order?: 'asc' | 'desc';
-    min_goals?: number;
-    max_goals?: number;
-  }
-) {
-  try {
-    const modules = import.meta.glob('/src/data/matches/*/*.json');
-
-    const allMatches: any[] = [];
-
-    // load all files
-    for (const path in modules) {
-      const mod: any = await modules[path]();
-      const data = mod.default;
-
-      // some files are arrays, some single object
-      if (Array.isArray(data)) {
-        allMatches.push(...data);
-      } else {
-        allMatches.push(data);
-      }
-    }
-
-    let matches = allMatches;
-
-    // ✅ filtering
-    if (filters?.competition_id) {
-      matches = matches.filter(m => m.competition?.competition_id === filters.competition_id);
-    }
-
-    if (filters?.team_id) {
-      matches = matches.filter(
-        m =>
-          m.home_team?.home_team_id === filters.team_id ||
-          m.away_team?.away_team_id === filters.team_id
-      );
-    }
-
-    if (filters?.season_name) {
-      matches = matches.filter(m => m.season?.season_name === filters.season_name);
-    }
-
-    // ✅ goal filter
-    if (filters?.min_goals !== undefined || filters?.max_goals !== undefined) {
-      matches = matches.filter(m => {
-        const total = (m.home_score || 0) + (m.away_score || 0);
-        if (filters.min_goals !== undefined && total < filters.min_goals) return false;
-        if (filters.max_goals !== undefined && total > filters.max_goals) return false;
-        return true;
-      });
-    }
-
-    // ✅ sorting
-    const asc = filters?.sort_order === 'asc';
-
-    matches.sort((a, b) => {
-      switch (filters?.sort_by) {
-        case 'competition':
-          return asc
-            ? a.competition?.competition_id - b.competition?.competition_id
-            : b.competition?.competition_id - a.competition?.competition_id;
-
-        case 'match_week':
-          return asc ? a.match_week - b.match_week : b.match_week - a.match_week;
-
-        case 'goals':
-          const gA = (a.home_score || 0) + (a.away_score || 0);
-          const gB = (b.home_score || 0) + (b.away_score || 0);
-          return asc ? gA - gB : gB - gA;
-
-        case 'date':
-        default:
-          return asc
-            ? new Date(a.match_date).getTime() - new Date(b.match_date).getTime()
-            : new Date(b.match_date).getTime() - new Date(a.match_date).getTime();
-      }
-    });
-    const formatted = matches.map(match => ({
-      match_id: match.match_id,
-      home_team: { team_name: match.home_team?.home_team_name },
-      away_team: { team_name: match.away_team?.away_team_name },
-      match_date: match.match_date,
-      home_score: match.home_score,
-      away_score: match.away_score,
-      competition: match.competition,
-    }));
-
-    return formatted.slice(offset, offset + limit);
-
-  } catch (err) {
-    console.error("Failed to load matches:", err);
-    return [];
-  }
-}
-type PlayerStats = {
-  id: number;
-  team_id: number;
-  player: { player_name: string };
-  minutes_played: number;
-  passes_attempted: number;
-  passes_completed: number;
-  key_passes: number;
-  progressive_passes: number;
-  shots: number;
-  xg: number;
-  xa: number;
-  assists: number;
-  carries: number;
-  dribbles: number;
-  tackles: number;
-  interceptions: number;
-  clearances: number;
-  blocks: number;
-  heatmap: [number, number][];
+type ApiEnvelope<T> = {
+  success: boolean;
+  message: string;
+  data: T;
+  meta: Record<string, unknown>;
 };
 
-type TeamShape = Record<number, Record<number, { xSum: number; ySum: number; count: number }>>;
-
-export async function getPlayerStatsByMatch(matchId: number): Promise<{ players: PlayerStats[]; teamShape: TeamShape }> {
-  try {
-    const eventModules = import.meta.glob('/src/data/events/*.json');
-    const entry = Object.entries(eventModules).find(([path]) => path.endsWith(`/${matchId}.json`));
-    if (!entry) return { players: [], teamShape: {} };
-
-    const mod: any = await entry[1]();
-    const events = mod.default;
-
-    const playerMap = new Map<number, PlayerStats>();
-    const playerMinutes = new Map<number, { start: number; end: number }>();
-    const teamShape: TeamShape = {};
-
-    const MATCH_END = 90;
-
-    for (const event of events) {
-      const teamId = event.team?.id;
-      const player = event.player;
-
-      // -------------------
-      // Track minutes
-      // -------------------
-      if (event.type?.name === 'Starting XI') {
-        event.tactics?.lineup?.forEach((p: any) => {
-          playerMinutes.set(p.player.id, { start: 0, end: MATCH_END });
-        });
-      }
-
-      if (event.type?.name === 'Substitution') {
-        const minute = event.minute;
-        // player going OUT
-        if (playerMinutes.has(event.player.id)) playerMinutes.get(event.player.id)!.end = minute;
-        // player coming IN
-        if (event.substitution?.replacement) {
-          playerMinutes.set(event.substitution.replacement.id, { start: minute, end: MATCH_END });
-        }
-      }
-
-      if (!player || !teamId) continue;
-
-      // -------------------
-      // Initialize stats
-      // -------------------
-      let stats = playerMap.get(player.id);
-      if (!stats) {
-        stats = {
-          id: player.id,
-          team_id: teamId,
-          player: { player_name: player.name },
-          minutes_played: 0,
-          passes_attempted: 0,
-          passes_completed: 0,
-          key_passes: 0,
-          progressive_passes: 0,
-          shots: 0,
-          xg: 0,
-          xa: 0,
-          assists: 0,
-          carries: 0,
-          dribbles: 0,
-          tackles: 0,
-          interceptions: 0,
-          clearances: 0,
-          blocks: 0,
-          heatmap: [],
-        };
-        playerMap.set(player.id, stats);
-      }
-
-      // -------------------
-      // Track heatmap
-      // -------------------
-      if (event.location) stats.heatmap.push(event.location);
-
-      // -------------------
-      // Track team shape
-      // -------------------
-      teamShape[teamId] = teamShape[teamId] || {};
-      const pos = teamShape[teamId][player.id] || { xSum: 0, ySum: 0, count: 0 };
-      if (event.location) {
-        pos.xSum += event.location[0];
-        pos.ySum += event.location[1];
-        pos.count++;
-      }
-      teamShape[teamId][player.id] = pos;
-
-      // -------------------
-      // Passes
-      // -------------------
-      if (event.type?.name === 'Pass') {
-        stats.passes_attempted++;
-        if (!event.pass?.outcome) stats.passes_completed++;
-        if (event.pass?.shot_assist) stats.key_passes++;
-        if (event.pass?.goal_assist) stats.assists++;
-        if (event.pass?.shot_assist?.statsbomb_xg) stats.xa += event.pass.shot_assist.statsbomb_xg;
-
-        // Progressive pass
-        if (!event.pass?.outcome && event.pass?.start_location && event.pass?.end_location) {
-          const distanceY = event.pass.end_location[1] - event.pass.start_location[1];
-          if (distanceY > 30) stats.progressive_passes++;
-        }
-      }
-
-      // -------------------
-      // Shots
-      // -------------------
-      if (event.type?.name === 'Shot') {
-        stats.shots++;
-        stats.xg += event.shot?.statsbomb_xg || 0;
-      }
-
-      // -------------------
-      // Carries / Dribbles
-      // -------------------
-      if (event.type?.name === 'Carry') {
-        const start = event.carry?.start_location?.[1] || 0;
-        const end = event.carry?.end_location?.[1] || 0;
-        if (end - start > 5) stats.carries++;
-      }
-
-      if (event.type?.name === 'Dribble') stats.dribbles++;
-
-      // -------------------
-      // Defensive actions
-      // -------------------
-      if (event.type?.name === 'Tackle') stats.tackles++;
-      if (event.type?.name === 'Interception') stats.interceptions++;
-      if (event.type?.name === 'Clearance') stats.clearances++;
-      if (event.type?.name === 'Block') stats.blocks++;
-    }
-
-
-    playerMap.forEach((stats, playerId) => {
-      const minutes = playerMinutes.get(playerId);
-      if (minutes) stats.minutes_played = minutes.end - minutes.start;
-    });
-
-    return { players: Array.from(playerMap.values()), teamShape };
-  } catch (err) {
-    console.error('Error fetching player stats:', err);
-    return { players: [], teamShape: {} };
-  }
-}
-
-export async function getTacticalMetricsByMatch(matchId: number): Promise<any[]> {
-  try {
-    const eventModules = import.meta.glob('/src/data/events/*.json');
-    const eventPath = `/src/data/events/${matchId}.json`;
-
-    if (!eventModules[eventPath]) return [];
-
-    const mod: any = await eventModules[eventPath]();
-    const events = mod.default;
-
-    let teamIds: number[] = [];
-    const teamStats: Record<number, { passes: number; xG: number }> = {};
-
-    events.forEach((event: any) => {
-      const teamId = event.team?.id;
-      if (!teamId) return;
-
-      if (!teamStats[teamId]) {
-        teamStats[teamId] = { passes: 0, xG: 0 };
-        teamIds.push(teamId);
-      }
-
-      if (event.type.name === 'Pass') {
-        teamStats[teamId].passes++;
-      }
-
-      if (event.type.name === 'Shot') {
-        teamStats[teamId].xG += event.shot?.statsbomb_xg || 0;
-      }
-    });
-
-    const totalPasses = Object.values(teamStats).reduce((acc, curr) => acc + curr.passes, 0);
-    const metrics: any[] = [];
-
-    teamIds.forEach((id) => {
-      const stats = teamStats[id];
-
-      // Possession Metric
-      metrics.push({
-        id: `pos-${id}`,
-        team_id: id,
-        metric_name: 'Possession',
-        metric_type: 'control',
-        metric_value: totalPasses > 0 ? (stats.passes / totalPasses) * 100 : 0
-      });
-
-      // xG Metric
-      metrics.push({
-        id: `xg-${id}`,
-        team_id: id,
-        metric_name: 'Expected Goals (xG)',
-        metric_type: 'attack',
-        metric_value: stats.xG
-      });
-
-      // Volume Metric
-      metrics.push({
-        id: `pass-${id}`,
-        team_id: id,
-        metric_name: 'Total Passes',
-        metric_type: 'distribution',
-        metric_value: stats.passes
-      });
-    });
-
-    return metrics;
-  } catch (err) {
-    console.error("Error fetching tactical metrics:", err);
-    return [];
-  }
-}
-export async function getMatchById(matchId: number) {
-  try {
-    const modules = import.meta.glob('/src/data/matches/**/*.json');
-    const events = import.meta.glob('/src/data/events/{matchId}.json');
-
-    // Loop through all files
-    for (const path in modules) {
-      const mod: any = await modules[path]();
-      const data = mod.default;
-
-      // Find the match inside this file
-      const match = data.find((m: any) => m.match_id === matchId);
-
-      if (match) {
-        // ✅ Format same as your list view
-        return {
-          match_id: match.match_id,
-          home_team: { team_name: match.home_team?.home_team_name },
-          away_team: { team_name: match.away_team?.away_team_name },
-          home_team_id: match.home_team?.home_team_id ,
-          away_team_id: match.away_team?.away_team_id ,
-          match_date: match.match_date,
-          home_score: match.home_score,
-          away_score: match.away_score,
-          stadium: match.stadium?.name,
-          referee: match.referee?.name,
-          country:match.stadium.country?.name,
-          kick_off: match.kick_off,
-          competition: match.competition,
-           home_team_manager: match.home_team?.managers?.[0]?.name,
-            away_team_manager: match.away_team?.managers?.[0]?.name,
-            match_week: match.match_week,
-
-        };
-      }
-    }
-
-    // Not found
-    return null;
-
-  } catch (err) {
-    console.error("Failed to load match:", err);
-    return null;
-  }
-}
-
-export async function getMatchesByCompetition(competitionId: number) {
-  const { data, error } = await supabase
-    .from('matches')
-    .select(`
-      *,
-      home_team:teams!matches_home_team_id_fkey(team_id, team_name, country),
-      away_team:teams!matches_away_team_id_fkey(team_id, team_name, country)
-    `)
-    .eq('competition_id', competitionId)
-    .order('match_date', { ascending: false });
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Match[];
-}
-
-export async function getMatchesByTeam(teamId: number) {
-  const { data, error } = await supabase
-    .from('matches')
-    .select(`
-      *,
-      home_team:teams!matches_home_team_id_fkey(team_id, team_name, country),
-      away_team:teams!matches_away_team_id_fkey(team_id, team_name, country),
-      competition:competitions(competition_id, competition_name, season_name)
-    `)
-    .or(`home_team_id.eq.${teamId},away_team_id.eq.${teamId}`)
-    .order('match_date', { ascending: false });
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Match[];
-}
-
-// Players API
-export async function getPlayers(limit = 100, offset = 0) {
-  const { data, error } = await supabase
-    .from('players')
-    .select('*')
-    .order('player_name')
-    .range(offset, offset + limit - 1);
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Player[];
-}
-
-export async function getPlayerById(playerId: number) {
-  const { data, error } = await supabase
-    .from('players')
-    .select('*')
-    .eq('player_id', playerId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data as Player | null;
-}
-
-export async function searchPlayers(searchTerm: string) {
-  const { data, error } = await supabase
-    .from('players')
-    .select('*')
-    .ilike('player_name', `%${searchTerm}%`)
-    .order('player_name')
-    .limit(20);
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Player[];
-}
-
-// Events API
-export async function getEventsByMatch(matchId: number, eventType?: string) {
-  let query = supabase
-    .from('events')
-    .select(`
-      *,
-      player:players(player_id, player_name, position),
-      team:teams(team_id, team_name)
-    `)
-    .eq('match_id', matchId)
-    .order('event_index');
-
-  if (eventType) {
-    query = query.eq('event_type', eventType);
-  }
-
-  const { data, error } = await query;
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Event[];
-}
-
-export async function getEventsByPlayer(playerId: number, limit = 100) {
-  const { data, error } = await supabase
-    .from('events')
-    .select(`
-      *,
-      player:players(player_id, player_name, position),
-      team:teams(team_id, team_name)
-    `)
-    .eq('player_id', playerId)
-    .order('id', { ascending: false })
-    .limit(limit);
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Event[];
-}
-
-// Tactical Metrics API
-export async function getTacticalMet1ricsByMatch(matchId: number) {
-  const { data, error } = await supabase
-    .from('tactical_metrics')
-    .select(`
-      *,
-      team:teams(team_id, team_name)
-    `)
-    .eq('match_id', matchId)
-    .order('metric_type');
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as TacticalMetric[];
-}
-
-export async function getTacticalMetricsByTeam(teamId: number, metricType?: string) {
-  let query = supabase
-    .from('tactical_metrics')
-    .select('*')
-    .eq('team_id', teamId)
-    .order('created_at', { ascending: false });
-
-  if (metricType) {
-    query = query.eq('metric_type', metricType);
-  }
-
-  const { data, error } = await query;
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as TacticalMetric[];
-}
-
-// Player Stats API
-export async function getPlayerSt1atsByMatch(matchId: number) {
-  const { data, error } = await supabase
-    .from('player_stats')
-    .select(`
-      *,
-      player:players(player_id, player_name, position, jersey_number),
-      team:teams(team_id, team_name)
-    `)
-    .eq('match_id', matchId)
-    .order('minutes_played', { ascending: false });
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as PlayerStats[];
-}
-
-export async function getPlayerStatsByPlayer(playerId: number) {
-  const { data, error } = await supabase
-    .from('player_stats')
-    .select(`
-      *,
-      player:players(player_id, player_name, position),
-      team:teams(team_id, team_name),
-      match:matches(match_id, match_date, home_score, away_score)
-    `)
-    .eq('player_id', playerId)
-    .order('created_at', { ascending: false });
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as PlayerStats[];
-}
-
-export async function getAggregatedPlayerStats(playerId: number) {
-  const stats = await getPlayerStatsByPlayer(playerId);
-
-  if (stats.length === 0) return null;
-
-  const aggregated = stats.reduce((acc, stat) => ({
-    total_matches: acc.total_matches + 1,
-    total_minutes: acc.total_minutes + stat.minutes_played,
-    total_passes_completed: acc.total_passes_completed + stat.passes_completed,
-    total_passes_attempted: acc.total_passes_attempted + stat.passes_attempted,
-    total_progressive_passes: acc.total_progressive_passes + stat.progressive_passes,
-    total_shots: acc.total_shots + stat.shots,
-    total_shots_on_target: acc.total_shots_on_target + stat.shots_on_target,
-    total_xg: acc.total_xg + stat.total_xg,
-    total_carries: acc.total_carries + stat.carries,
-    total_carry_distance: acc.total_carry_distance + stat.carry_distance,
-    total_progressive_carries: acc.total_progressive_carries + stat.progressive_carries,
-    total_pressures: acc.total_pressures + stat.pressures,
-    total_successful_pressures: acc.total_successful_pressures + stat.successful_pressures,
-  }), {
-    total_matches: 0,
-    total_minutes: 0,
-    total_passes_completed: 0,
-    total_passes_attempted: 0,
-    total_progressive_passes: 0,
-    total_shots: 0,
-    total_shots_on_target: 0,
-    total_xg: 0,
-    total_carries: 0,
-    total_carry_distance: 0,
-    total_progressive_carries: 0,
-    total_pressures: 0,
-    total_successful_pressures: 0,
-  });
-
-  return {
-    ...aggregated,
-    pass_completion_rate: aggregated.total_passes_attempted > 0
-      ? (aggregated.total_passes_completed / aggregated.total_passes_attempted) * 100
-      : 0,
-    shot_accuracy: aggregated.total_shots > 0
-      ? (aggregated.total_shots_on_target / aggregated.total_shots) * 100
-      : 0,
-    pressure_success_rate: aggregated.total_pressures > 0
-      ? (aggregated.total_successful_pressures / aggregated.total_pressures) * 100
-      : 0,
+export type ProviderStatus = {
+  provider: string;
+  success: boolean;
+  latencyMs?: number | null;
+  latency_ms?: number | null;
+  itemCount?: number;
+  item_count?: number;
+  error: string | null;
+  stale: boolean;
+};
+
+export type TeamRef = {
+  id: string | null;
+  name: string;
+  shortName?: string | null;
+  short_name?: string | null;
+  crest?: string | null;
+  providerIds?: Record<string, string>;
+  provider_ids?: Record<string, string>;
+};
+
+export type LiveMatch = {
+  id: string;
+  homeTeam: string;
+  awayTeam: string;
+  status: string;
+  kickoff: string;
+  score: {
+    home: number;
+    away: number;
   };
+  venue: string | null;
+  source: string;
+  competition: {
+    id?: string | null;
+    name: string;
+    code?: string | null;
+    country?: string | null;
+  };
+  minute: number;
+  providers: string[];
+  externalIds: Record<string, string>;
+  external_ids: Record<string, string>;
+  homeTeamRef: TeamRef;
+  awayTeamRef: TeamRef;
+  home_team: TeamRef;
+  away_team: TeamRef;
+  scheduledAt: string;
+  scheduled_at: string;
+};
+
+export type LiveMatchesResponse = {
+  matches: LiveMatch[];
+  summary: {
+    totalMatches: number;
+    total_matches: number;
+    liveMatches: number;
+    live_matches: number;
+    trackedCompetitions: number;
+    tracked_competitions: number;
+  };
+  providerStatus: ProviderStatus[];
+  provider_status: ProviderStatus[];
+};
+
+export type MatchHistoryResponse = {
+  team: {
+    id: string;
+    name: string;
+    shortName?: string;
+    crest?: string | null;
+    venue?: string | null;
+  };
+  matches: Array<{
+    id: string;
+    date: string;
+    competition: string;
+    venue: string;
+    opponent: string;
+    status: string;
+    score: { for: number; against: number };
+    outcome: "W" | "D" | "L";
+    metrics?: Record<string, number>;
+  }>;
+  trends: {
+    form: string[];
+    wins: number;
+    draws: number;
+    losses: number;
+    goalsFor: number;
+    goals_for: number;
+    goalsAgainst: number;
+    goals_against: number;
+    pointsPerMatch: number;
+    points_per_match: number;
+    formIndex: number;
+    form_index: number;
+    attackStrength: number;
+    attack_strength: number;
+    defenseStrength: number;
+    defense_strength: number;
+    estimatedPossessionTrend: number;
+    estimated_possession_trend: number;
+  };
+  teamStats: {
+    formIndex: number;
+    attackStrength: number;
+    defenseStrength: number;
+    estimatedPossessionTrend: number;
+  };
+  team_stats: {
+    form_index: number;
+    attack_strength: number;
+    defense_strength: number;
+    estimated_possession_trend: number;
+  };
+  providerStatus: ProviderStatus[];
+  provider_status: ProviderStatus[];
+};
+
+export type PlayerAnalyticsResponse = {
+  player: {
+    id: string;
+    name: string;
+    position?: string | null;
+    nationality?: string | null;
+    shirtNumber?: number | null;
+    shirt_number?: number | null;
+    role?: string | null;
+    currentTeam?: TeamRef;
+    current_team?: TeamRef;
+  };
+  analytics: {
+    minutesPlayed?: number;
+    minutes_played?: number;
+    matchesOnPitch?: number;
+    matches_on_pitch?: number;
+    starts?: number;
+    goals?: number;
+    assists?: number;
+    minutesPerMatch?: number;
+    minutes_per_match?: number;
+    goalsPer90?: number;
+    goals_per_90?: number;
+    assistsPer90?: number;
+    assists_per_90?: number;
+    goalContributionsPer90?: number;
+    goal_contributions_per_90?: number;
+    availabilityRate?: number;
+    availability_rate?: number;
+    formIndex?: number;
+    form_index?: number;
+    performanceRating?: number;
+    performance_rating?: number;
+    inferredShotsPer90?: number;
+    inferred_shots_per_90?: number;
+    inferredKeyPassesPer90?: number;
+    inferred_key_passes_per_90?: number;
+    contributionHeat?: Record<string, number>;
+    contribution_heat?: Record<string, number>;
+    roleProfile?: {
+      primaryRole: string;
+      primary_role: string;
+      styleTags: string[];
+      style_tags: string[];
+    };
+    role_profile?: {
+      primaryRole: string;
+      primary_role: string;
+      styleTags: string[];
+      style_tags: string[];
+    };
+  };
+  recentMatches: Array<{
+    id: string;
+    date: string;
+    competition: string;
+    opponent: string | null;
+    score: { home?: number; away?: number };
+    status: string;
+    performanceRating?: number;
+    performance_rating?: number;
+  }>;
+  recent_matches: Array<{
+    id: string;
+    date: string;
+    competition: string;
+    opponent: string | null;
+    score: { home?: number; away?: number };
+    status: string;
+    performanceRating?: number;
+    performance_rating?: number;
+  }>;
+  providerStatus: ProviderStatus[];
+  provider_status: ProviderStatus[];
+};
+
+export type InjuryWatchResponse = {
+  watchlist: Array<{
+    playerId: string;
+    player_id: string;
+    playerName: string;
+    player_name: string;
+    position?: string | null;
+    shirtNumber?: number | null;
+    shirt_number?: number | null;
+    team: {
+      id: string;
+      name: string;
+      crest?: string | null;
+    };
+    riskScore: number;
+    risk_score: number;
+    status: "HIGH_RISK" | "MONITOR" | "AVAILABLE";
+    fatigueIndex: number;
+    fatigue_index: number;
+    fatigueLevel: string;
+    fatigue_level: string;
+    minutesPlayedRecent: number;
+    minutes_played_recent: number;
+    averageMinutes: number;
+    average_minutes: number;
+    startsRecent: number;
+    starts_recent: number;
+    overloadDetected: boolean;
+    overload_detected: boolean;
+    reasons: string[];
+  }>;
+  summary: {
+    highRisk: number;
+    high_risk: number;
+    monitor: number;
+    available: number;
+  };
+  providerStatus: ProviderStatus[];
+  provider_status: ProviderStatus[];
+};
+
+export type TeamIntelligenceResponse = {
+  team: {
+    id: string;
+    name: string;
+    shortName?: string;
+    logo?: string | null;
+    crest?: string | null;
+    venue?: string | null;
+    website?: string | null;
+    clubColors?: string | null;
+    club_colors?: string | null;
+    founded?: number | null;
+    league?: Record<string, unknown>;
+    manager?: {
+      id: string;
+      name: string;
+      nationality?: string | null;
+    };
+  };
+  stats: Record<string, number>;
+  recentForm: MatchHistoryResponse["trends"];
+  recent_form: MatchHistoryResponse["trends"];
+  squadSummary: Record<string, number>;
+  squad_summary: Record<string, number>;
+  squad: Array<{
+    id: string;
+    name: string;
+    position?: string | null;
+    shirtNumber?: number | null;
+    shirt_number?: number | null;
+    nationality?: string | null;
+    age?: number | null;
+    availability?: {
+      status: string;
+      riskScore?: number;
+      risk_score?: number;
+      label?: string;
+    };
+    roleCategory?: string;
+    role_category?: string;
+  }>;
+  providerStatus: ProviderStatus[];
+  provider_status: ProviderStatus[];
+};
+
+export type TeamSquadResponse = {
+  team: TeamIntelligenceResponse["team"];
+  squad: TeamIntelligenceResponse["squad"];
+  startingXI: TeamIntelligenceResponse["squad"];
+  starting_xi: TeamIntelligenceResponse["squad"];
+  bench: TeamIntelligenceResponse["squad"];
+  availabilitySummary: Record<string, number>;
+  availability_summary: Record<string, number>;
+  providerStatus: ProviderStatus[];
+  provider_status: ProviderStatus[];
+};
+
+export type ManagerProfileResponse = {
+  manager: {
+    id: string;
+    name: string;
+    nationality?: string | null;
+    dateOfBirth?: string | null;
+    date_of_birth?: string | null;
+    team: {
+      id: string;
+      name: string;
+      crest?: string | null;
+    };
+    tacticalStyle: {
+      label: string;
+      summary: string;
+      traits: string[];
+    };
+    tactical_style: {
+      label: string;
+      summary: string;
+      traits: string[];
+    };
+  };
+  record: {
+    matches: number;
+    wins: number;
+    draws: number;
+    losses: number;
+    pointsPerMatch: number;
+    points_per_match: number;
+  };
+  teamHistory: MatchHistoryResponse["matches"];
+  team_history: MatchHistoryResponse["matches"];
+  providerStatus: ProviderStatus[];
+  provider_status: ProviderStatus[];
+};
+
+export type TacticalAnalysisResponse = {
+  match: LiveMatch & {
+    competition: {
+      name: string;
+      code?: string | null;
+      country?: string | null;
+    };
+  };
+  team_analysis: {
+    teamName: string;
+    team_name: string;
+    formation: string;
+    strengths: string[];
+    weaknesses: string[];
+    metrics: Record<string, number>;
+    momentum: number;
+  };
+  opponent_analysis: {
+    teamName: string;
+    team_name: string;
+    formation: string;
+    strengths: string[];
+    weaknesses: string[];
+    metrics: Record<string, number>;
+    momentum: number;
+  };
+  prediction: string;
+  key_players: Array<{
+    playerId: string;
+    player_id: string;
+    name: string;
+    team: string;
+    role: string;
+    availability: string;
+  }>;
+  analysis: {
+    formations: {
+      home: string;
+      away: string;
+    };
+    metrics: {
+      home: Record<string, number>;
+      away: Record<string, number>;
+    };
+    strengths: string[];
+    weaknesses: string[];
+    momentum?: {
+      home: number;
+      away: number;
+      label: string;
+    };
+    prediction: {
+      homeWin?: number;
+      home_win?: number;
+      draw: number;
+      awayWin?: number;
+      away_win?: number;
+      verdict: string;
+    };
+  };
+  timeline: Array<{
+    minute: number;
+    type: string;
+    team: string;
+    description: string;
+  }>;
+  context: {
+    homeForm?: MatchHistoryResponse["trends"];
+    home_form?: MatchHistoryResponse["trends"];
+    awayForm?: MatchHistoryResponse["trends"];
+    away_form?: MatchHistoryResponse["trends"];
+    [key: string]: unknown;
+  };
+  providerStatus: ProviderStatus[];
+  provider_status: ProviderStatus[];
+};
+
+export type DashboardSummaryResponse = {
+  overviewCards: Array<{
+    label: string;
+    value: number;
+    tone: string;
+  }>;
+  overview_cards: Array<{
+    label: string;
+    value: number;
+    tone: string;
+  }>;
+  systemStatus: ProviderStatus[];
+  system_status: ProviderStatus[];
+  liveBoard: LiveMatch[];
+  live_board: LiveMatch[];
+  featuredMatch: LiveMatch | null;
+  featured_match: LiveMatch | null;
+  tacticalSpotlight: TacticalAnalysisResponse | null;
+  tactical_spotlight: TacticalAnalysisResponse | null;
+  injuryWatch: InjuryWatchResponse["watchlist"];
+  injury_watch: InjuryWatchResponse["watchlist"];
+  featuredPlayers: Array<{
+    player: PlayerAnalyticsResponse["player"];
+    analytics: PlayerAnalyticsResponse["analytics"];
+    risk: {
+      score: number;
+      status: string;
+    };
+  }>;
+  featured_players: Array<{
+    player: PlayerAnalyticsResponse["player"];
+    analytics: PlayerAnalyticsResponse["analytics"];
+    risk: {
+      score: number;
+      status: string;
+    };
+  }>;
+  featuredTeams: TeamIntelligenceResponse[];
+  featured_teams: TeamIntelligenceResponse[];
+  featuredManagers: ManagerProfileResponse[];
+  featured_managers: ManagerProfileResponse[];
+  predictionBoard: Array<{
+    matchId: string;
+    match_id: string;
+    matchLabel: string;
+    match_label: string;
+    prediction: TacticalAnalysisResponse["analysis"]["prediction"];
+  }>;
+  prediction_board: Array<{
+    matchId: string;
+    match_id: string;
+    matchLabel: string;
+    match_label: string;
+    prediction: TacticalAnalysisResponse["analysis"]["prediction"];
+  }>;
+};
+
+export type AIChatResponse = {
+  reply: string;
+  engine: string;
+  contextSummary?: Record<string, unknown>;
+  context_summary?: Record<string, unknown>;
+  generatedAt?: string;
+  generated_at?: string;
+};
+
+function normalizeApiError(error: unknown): Error {
+  const axiosError = error as AxiosError<ApiEnvelope<unknown>>;
+  const message =
+    axiosError.response?.data?.message ??
+    axiosError.message ??
+    "The football intelligence API request failed.";
+  return new Error(message);
 }
 
-// Dashboard API
-export async function getDashboardStats() {
+async function unwrap<T>(request: Promise<{ data: ApiEnvelope<T> }>): Promise<T> {
   try {
-    const res = await fetch('/src/data/dashboard.json');
-    const data = await res.json();
-
-    return {
-      total_competitions: data.total_competitions || 0,
-      total_teams: data.total_teams || 0,
-      total_matches: data.total_matches || 0,
-      total_players: data.total_players || 0,
-    };
-  } catch (err) {
-    console.error("Failed to load dashboard stats:", err);
-    return {
-      total_competitions: 0,
-      total_teams: 0,
-      total_matches: 0,
-      total_players: 0,
-    };
+    const response = await request;
+    if (!response.data.success) {
+      throw new Error(response.data.message || "API request failed");
+    }
+    return response.data.data;
+  } catch (error) {
+    throw normalizeApiError(error);
   }
-
 }
 
-// Managers API
-export async function getManagers() {
-  const { data, error } = await supabase
-    .from('managers')
-    .select('*')
-    .order('manager_name');
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Manager[];
+export function getLiveMatches() {
+  return unwrap<LiveMatchesResponse>(api.get("/api/live-matches"));
 }
 
-export async function getManagerById(managerId: number) {
-  const { data, error } = await supabase
-    .from('managers')
-    .select('*')
-    .eq('manager_id', managerId)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data as Manager | null;
+export function getMatchHistory(teamId: string) {
+  return unwrap<MatchHistoryResponse>(api.get(`/api/match-history/${teamId}`));
 }
 
-export async function getManagerPerformance(managerId: number) {
-  const { data, error } = await supabase
-    .from('manager_performance')
-    .select(`
-      *,
-      manager:managers(manager_id, manager_name, nationality, coaching_style),
-      team:teams(team_id, team_name),
-      competition:competitions(competition_id, competition_name)
-    `)
-    .eq('manager_id', managerId)
-    .order('season_id', { ascending: false });
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as ManagerPerformance[];
+export function getTeamStats(teamId: string) {
+  return unwrap<MatchHistoryResponse>(api.get(`/api/team-stats/${teamId}`));
 }
 
-export async function getEPLSpecialists() {
-  const { data, error } = await supabase
-    .from('manager_performance')
-    .select(`
-      *,
-      manager:managers(manager_id, manager_name, nationality, coaching_style, preferred_formation)
-    `)
-    .eq('epl_specialist', true)
-    .order('points_per_game', { ascending: false })
-    .limit(10);
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as ManagerPerformance[];
+export function getTeam(teamId: string) {
+  return unwrap<TeamIntelligenceResponse>(api.get(`/api/teams/${teamId}`));
 }
 
-export async function getRelegationSpecialists() {
-  const { data, error } = await supabase
-    .from('manager_performance')
-    .select(`
-      *,
-      manager:managers(manager_id, manager_name, nationality, coaching_style)
-    `)
-    .eq('is_relegation_battle', true)
-    .eq('survival_success', true)
-    .order('points_from_relegation', { ascending: true })
-    .limit(10);
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as ManagerPerformance[];
+export function getTeamSquad(teamId: string) {
+  return unwrap<TeamSquadResponse>(api.get(`/api/teams/${teamId}/squad`));
 }
 
-// Injuries API
-export async function getInjuriesByPlayer(playerId: number) {
-  const { data, error } = await supabase
-    .from('injuries')
-    .select(`
-      *,
-      player:players(player_id, player_name, position)
-    `)
-    .eq('player_id', playerId)
-    .order('injury_date', { ascending: false });
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as Injury[];
+export function getPlayer(playerId: string) {
+  return unwrap<PlayerAnalyticsResponse>(api.get(`/api/player/${playerId}`));
 }
 
-export async function getInjuryPronePlayersAnalysis() {
-  const { data, error } = await supabase
-    .from('injuries')
-    .select(`
-      player_id,
-      player:players(player_id, player_name, position),
-      injury_type,
-      days_out,
-      matches_missed,
-      recurring,
-      injury_date
-    `)
-    .order('injury_date', { ascending: false });
+export function getPlayerStats(playerId: string) {
+  return unwrap<PlayerAnalyticsResponse>(api.get(`/api/player-stats/${playerId}`));
+}
 
-  if (error) throw error;
+export function getPlayerAnalysis(playerId: string) {
+  return unwrap<PlayerAnalyticsResponse>(api.get(`/api/player-analysis/${playerId}`));
+}
 
-  const injuryData = Array.isArray(data) ? data : [];
+export function getManager(teamId: string) {
+  return unwrap<ManagerProfileResponse>(api.get(`/api/managers/${teamId}`));
+}
 
-  // Aggregate injury data by player
-  const playerInjuryMap = new Map<number, InjuryRiskAssessment>();
+export function getInjuries(params?: { teamId?: string; matchId?: string }) {
+  return unwrap<InjuryWatchResponse>(
+    api.get("/api/injuries", {
+      params: {
+        team_id: params?.teamId,
+        match_id: params?.matchId,
+      },
+    })
+  );
+}
 
-  injuryData.forEach((injury: any) => {
-    const playerId = injury.player_id;
-    if (!playerId) return;
+export function getTacticalAnalysis(matchId: string) {
+  return unwrap<TacticalAnalysisResponse>(api.get(`/api/tactical-analysis/${matchId}`));
+}
 
-    if (!playerInjuryMap.has(playerId)) {
-      playerInjuryMap.set(playerId, {
-        player_id: playerId,
-        player_name: injury.player?.player_name || 'Unknown',
-        total_injuries: 0,
-        recurring_injuries: 0,
-        total_days_out: 0,
-        total_matches_missed: 0,
-        injury_risk_score: 0,
-        most_common_injury: '',
-        last_injury_date: null,
+export function getMatchAnalysis(matchId: string) {
+  return unwrap<TacticalAnalysisResponse>(api.get(`/api/match/${matchId}/analysis`));
+}
+
+export function getMatchDetails(matchId: string) {
+  return unwrap<TacticalAnalysisResponse>(api.get(`/api/match-details/${matchId}`));
+}
+
+export function getDashboardSummary() {
+  return unwrap<DashboardSummaryResponse>(api.get("/api/dashboard-summary"));
+}
+
+export function sendAIChat(payload: {
+  message: string;
+  match_id?: string;
+  player_id?: string;
+  team_id?: string;
+  conversation?: Array<{ role: string; content: string }>;
+}) {
+  return unwrap<AIChatResponse>(api.post("/api/ai-chat", payload));
+}
+
+export async function getTeams(): Promise<TeamIntelligenceResponse[]> {
+  const summary = await getDashboardSummary();
+  const featuredTeams = summary.featured_teams ?? summary.featuredTeams ?? [];
+  if (featuredTeams.length) {
+    return featuredTeams;
+  }
+  const live = await getLiveMatches();
+  const teamIds = new Set<string>();
+  const teams: TeamIntelligenceResponse[] = [];
+  for (const match of live.matches) {
+    for (const team of [match.home_team, match.away_team]) {
+      if (team.id && !teamIds.has(team.id)) {
+        teamIds.add(team.id);
+        teams.push(await getTeam(team.id));
+      }
+    }
+  }
+  return teams;
+}
+
+export async function getManagers(): Promise<ManagerProfileResponse[]> {
+  const summary = await getDashboardSummary();
+  const featuredManagers = summary.featured_managers ?? summary.featuredManagers ?? [];
+  if (featuredManagers.length) {
+    return featuredManagers;
+  }
+  const teams = await getTeams();
+  const managerPayloads = await Promise.all(
+    teams.slice(0, 6).map((team) => getManager(team.team.id))
+  );
+  return managerPayloads;
+}
+
+export async function getAIPredictions(): Promise<DashboardSummaryResponse["prediction_board"]> {
+  const summary = await getDashboardSummary();
+  return summary.prediction_board ?? summary.predictionBoard ?? [];
+}
+
+export async function getCompetitions(): Promise<
+  Array<{
+    id: number;
+    competition_id: number;
+    competition_name: string;
+    country_name: string | null;
+    season_id: number;
+    season_name: string;
+    created_at: string;
+  }>
+> {
+  const live = await getLiveMatches();
+  return live.matches.reduce<
+    Array<{
+      id: number;
+      competition_id: number;
+      competition_name: string;
+      country_name: string | null;
+      season_id: number;
+      season_name: string;
+      created_at: string;
+    }>
+  >((items, match, index) => {
+    const identifier = Number.parseInt(String(match.competition.id ?? index + 1), 10) || index + 1;
+    if (!items.find((item) => item.competition_id === identifier)) {
+      items.push({
+        id: identifier,
+        competition_id: identifier,
+        competition_name: match.competition.name,
+        country_name: match.competition.country ?? null,
+        season_id: 2026,
+        season_name: "Current Season",
+        created_at: new Date().toISOString(),
       });
     }
-
-    const assessment = playerInjuryMap.get(playerId)!;
-    assessment.total_injuries++;
-    if (injury.recurring) assessment.recurring_injuries++;
-    assessment.total_days_out += injury.days_out || 0;
-    assessment.total_matches_missed += injury.matches_missed || 0;
-    if (!assessment.last_injury_date || injury.injury_date > assessment.last_injury_date) {
-      assessment.last_injury_date = injury.injury_date;
-    }
-  });
-
-  // Calculate risk scores
-  const assessments = Array.from(playerInjuryMap.values()).map(assessment => ({
-    ...assessment,
-    injury_risk_score: Math.min(
-      (assessment.total_injuries * 10 +
-       assessment.recurring_injuries * 15 +
-       assessment.total_matches_missed * 2) / 10,
-      10
-    ),
-  }));
-
-  return assessments.sort((a, b) => b.injury_risk_score - a.injury_risk_score);
+    return items;
+  }, []);
 }
 
-// AI Predictions API
-export async function getAIPredictions(predictionType?: string) {
-  let query = supabase
-    .from('ai_predictions')
-    .select('*')
-    .order('prediction_date', { ascending: false });
-
-  if (predictionType) {
-    query = query.eq('prediction_type', predictionType);
-  }
-
-  const { data, error } = await query.limit(50);
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as AIPrediction[];
+export async function getInjuryPronePlayersAnalysis(): Promise<InjuryWatchResponse["watchlist"]> {
+  const injuries = await getInjuries();
+  return injuries.watchlist;
 }
 
-export async function getAIPredictionsByEntity(entityType: string, entityId: number) {
-  const { data, error } = await supabase
-    .from('ai_predictions')
-    .select('*')
-    .eq('entity_type', entityType)
-    .eq('entity_id', entityId)
-    .order('prediction_date', { ascending: false });
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as AIPrediction[];
+export async function getEPLSpecialists(): Promise<ManagerProfileResponse[]> {
+  return getManagers();
 }
 
-// Undiscovered Metrics API
-export async function getUndiscoveredMetrics(category?: string) {
-  let query = supabase
-    .from('undiscovered_metrics')
-    .select('*')
-    .order('percentile', { ascending: false });
-
-  if (category) {
-    query = query.eq('metric_category', category);
-  }
-
-  const { data, error } = await query.limit(50);
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as UndiscoveredMetric[];
+export async function getRelegationSpecialists(): Promise<ManagerProfileResponse[]> {
+  return getManagers();
 }
 
-export async function getUndiscoveredMetricsByEntity(entityType: string, entityId: number) {
-  const { data, error } = await supabase
-    .from('undiscovered_metrics')
-    .select('*')
-    .eq('entity_type', entityType)
-    .eq('entity_id', entityId)
-    .order('percentile', { ascending: false });
-
-  if (error) throw error;
-  return (Array.isArray(data) ? data : []) as UndiscoveredMetric[];
+export async function getUndiscoveredMetrics(): Promise<
+  Array<{
+    id: number;
+    metric_name: string;
+    metric_category: string;
+    entity_type: string;
+    entity_id: number;
+    metric_value: number | null;
+    percentile: number | null;
+    season_id: number | null;
+    calculation_method: string | null;
+    insights: string | null;
+    metadata: Record<string, unknown> | null;
+    created_at: string;
+  }>
+> {
+  const summary = await getDashboardSummary();
+  return [
+    {
+      id: 1,
+      metric_name: "Provider stack coverage",
+      metric_category: "management",
+      entity_type: "system",
+      entity_id: 1,
+      metric_value: summary.system_status.length,
+      percentile: 82,
+      season_id: 2026,
+      calculation_method: "Count of active normalized providers",
+      insights: `${summary.system_status.length} providers are currently feeding the intelligence layer.`,
+      metadata: null,
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      metric_name: "Prediction board depth",
+      metric_category: "performance",
+      entity_type: "platform",
+      entity_id: 2,
+      metric_value: (summary.prediction_board ?? []).length,
+      percentile: 78,
+      season_id: 2026,
+      calculation_method: "Count of tactical predictions ready for operator review",
+      insights: `${(summary.prediction_board ?? []).length} matches are currently modelled by the tactical engine.`,
+      metadata: null,
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 3,
+      metric_name: "Injury watch density",
+      metric_category: "mental",
+      entity_type: "platform",
+      entity_id: 3,
+      metric_value: (summary.injury_watch ?? []).length,
+      percentile: 74,
+      season_id: 2026,
+      calculation_method: "Tracked players under active availability review",
+      insights: `${(summary.injury_watch ?? []).length} players are on the current injury and fatigue watchlist.`,
+      metadata: null,
+      created_at: new Date().toISOString(),
+    },
+    {
+      id: 4,
+      metric_name: "Manager intelligence coverage",
+      metric_category: "management",
+      entity_type: "platform",
+      entity_id: 4,
+      metric_value: (summary.featured_managers ?? []).length,
+      percentile: 80,
+      season_id: 2026,
+      calculation_method: "Managers profiled in the dashboard intelligence layer",
+      insights: `${(summary.featured_managers ?? []).length} managers currently have tactical-style summaries available.`,
+      metadata: null,
+      created_at: new Date().toISOString(),
+    },
+  ];
 }
