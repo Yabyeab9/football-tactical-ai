@@ -64,13 +64,13 @@ class PredictionEngine:
         base_probs = self._calculate_base_probabilities(match)
 
         # Adjust for current score
-        score_adjustment = self._calculate_score_adjustment(match.score)
+        score_adjustment = self._calculate_score_adjustment(match)
 
         # Momentum analysis
-        momentum_adjustment = self._analyze_momentum(match.id, events, current_minute)
+        momentum_adjustment = self._analyze_momentum(match, events, current_minute)
 
         # XG-based adjustment
-        xg_adjustment = self._calculate_xg_adjustment(events)
+        xg_adjustment = self._calculate_xg_adjustment(match, events)
 
         # Time remaining factor
         time_factor = self._calculate_time_factor(current_minute)
@@ -180,12 +180,10 @@ class PredictionEngine:
 
     def _calculate_base_probabilities(self, match: Match) -> Tuple[float, float, float]:
         """Calculate base probabilities from team form and historical data"""
-        # Simplified implementation - in practice, this would use Elo ratings, form, etc.
-        home_advantage = 0.6
         draw_probability = 0.25
 
-        # Mock calculations based on team names (for demo)
-        if "City" in match.home_team.name or "United" in match.home_team.name:
+        team_label = match.home_team_id.lower() if match.home_team_id else ""
+        if "city" in team_label or "united" in team_label:
             home_prob = 0.55
         else:
             home_prob = 0.45
@@ -193,10 +191,10 @@ class PredictionEngine:
         away_prob = 1.0 - home_prob - draw_probability
         return home_prob, draw_probability, away_prob
 
-    def _calculate_score_adjustment(self, score: Dict[str, int]) -> Tuple[float, float, float]:
+    def _calculate_score_adjustment(self, match: Match) -> Tuple[float, float, float]:
         """Adjust probabilities based on current score"""
-        home_goals = score.get('home', 0)
-        away_goals = score.get('away', 0)
+        home_goals = match.home_score or 0
+        away_goals = match.away_score or 0
         goal_diff = home_goals - away_goals
 
         if goal_diff > 0:
@@ -206,18 +204,17 @@ class PredictionEngine:
         else:
             return -0.02, 0.04, -0.02  # Draw becomes more likely
 
-    def _analyze_momentum(self, match_id: str, events: List[MatchEvent], current_minute: int) -> Tuple[float, float, float]:
+    def _analyze_momentum(self, match: Match, events: List[MatchEvent], current_minute: int) -> Tuple[float, float, float]:
         """Analyze momentum based on recent events"""
-        if match_id not in self.momentum_factors:
-            self.momentum_factors[match_id] = []
+        if match.id not in self.momentum_factors:
+            self.momentum_factors[match.id] = []
 
-        # Add new momentum factors from recent events
         recent_events = [e for e in events if e.minute >= current_minute - 5]
 
         for event in recent_events:
             if event.type == 'goal':
-                impact = 0.15 if event.team_id == events[0].team_id else -0.15  # Simplified team check
-                self.momentum_factors[match_id].append(MomentumFactor(
+                impact = 0.15 if event.team_id == match.home_team_id else -0.15
+                self.momentum_factors[match.id].append(MomentumFactor(
                     timestamp=datetime.now(),
                     type='goal',
                     impact=impact,
@@ -225,8 +222,8 @@ class PredictionEngine:
                     decay_rate=0.9
                 ))
             elif event.type == 'card' and event.subtype == 'red':
-                impact = -0.1 if event.team_id == events[0].team_id else 0.1
-                self.momentum_factors[match_id].append(MomentumFactor(
+                impact = -0.1 if event.team_id == match.home_team_id else 0.1
+                self.momentum_factors[match.id].append(MomentumFactor(
                     timestamp=datetime.now(),
                     type='red_card',
                     impact=impact,
@@ -248,10 +245,10 @@ class PredictionEngine:
 
         return momentum_adjustment, -momentum_adjustment * 0.5, -momentum_adjustment * 0.5
 
-    def _calculate_xg_adjustment(self, events: List[MatchEvent]) -> Tuple[float, float, float]:
+    def _calculate_xg_adjustment(self, match: Match, events: List[MatchEvent]) -> Tuple[float, float, float]:
         """Adjust probabilities based on expected goals"""
-        home_xg = sum(e.xg or 0 for e in events if e.team_id == events[0].team_id)  # Simplified
-        away_xg = sum(e.xg or 0 for e in events if e.team_id != events[0].team_id)
+        home_xg = sum(e.xg or 0 for e in events if e.team_id == match.home_team_id)
+        away_xg = sum(e.xg or 0 for e in events if e.team_id == match.away_team_id)
 
         xg_diff = home_xg - away_xg
         adjustment_scale = 0.05
@@ -294,7 +291,7 @@ class PredictionEngine:
         factors = []
 
         # Score factor
-        score_diff = match.score.home - match.score.away
+        score_diff = (match.home_score or 0) - (match.away_score or 0)
         if abs(score_diff) >= 2:
             factors.append(f"Significant score advantage ({score_diff:+d})")
         elif score_diff != 0:

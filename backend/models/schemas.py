@@ -213,3 +213,8 @@ class SearchResult(BaseModel):
     relevance_score: float
     tactical_style: str
     description: str
+
+
+# Aliases for legacy tactical search signatures
+MatchEvent = LiveEvent
+TacticalMetric = Dict[str, Any]

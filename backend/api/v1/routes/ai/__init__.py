@@ -21,7 +21,7 @@ from backend.core.dependencies import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ai", tags=["AI Tactical Intelligence"])
+router = APIRouter(tags=["AI Tactical Intelligence"])
 
 
 class TacticalBriefRequest(BaseModel):
@@ -57,6 +57,62 @@ class TacticalAnomalyRequest(BaseModel):
     current_minute: int
 
 
+class SemanticSearchRequest(BaseModel):
+    query: str
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class XTMomentumRequest(BaseModel):
+    match_id: str
+
+
+class SubstitutionSimulationRequest(BaseModel):
+    match_id: str
+    team_id: str
+    out_player_id: str
+    in_player_profile: Dict[str, Any]
+    iterations: int = Field(default=300, ge=50, le=1000)
+
+
+class ScoutingReportRequest(BaseModel):
+    match_id: str
+
+
+class GhostingRequest(BaseModel):
+    match_id: str
+    team_id: str
+
+
+class FormationSwitchRequest(BaseModel):
+    match_id: str
+    team_id: str
+
+
+class PitchControlRequest(BaseModel):
+    match_id: str
+    current_minute: int
+
+
+class PlayerDNARequest(BaseModel):
+    player_id: str
+    team_id: str
+    match_id: str
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+class PressingHeatmapRequest(BaseModel):
+    match_id: str
+
+
+class FatigueDecayRequest(BaseModel):
+    player_id: str
+    match_id: str
+
+
+class RefereeBiasRequest(BaseModel):
+    match_id: str
+
+
 @router.post("/tactical-brief", response_model=Dict[str, Any])
 async def generate_tactical_brief(
     request: TacticalBriefRequest,
@@ -84,15 +140,7 @@ async def generate_tactical_brief(
         )
 
         return {
-            "brief": {
-                "type": brief.type.value,
-                "timestamp": brief.timestamp.isoformat(),
-                "title": brief.title,
-                "analysis": brief.analysis,
-                "confidence": brief.confidence,
-                "supporting_data": brief.supporting_data,
-                "recommendations": brief.recommendations
-            }
+            "brief": brief
         }
 
     except Exception as e:
@@ -110,16 +158,15 @@ async def get_live_predictions(
     Get live match outcome predictions
     """
     try:
-        # Fetch match data
-        match = await data_service.get_matches("", "")  # Simplified - would need proper match fetching
+        # Fetch match data by ID
+        match = await data_service.get_match_by_id(request.match_id)
         if not match:
             raise HTTPException(status_code=404, detail="Match not found")
 
         events = await data_service.get_live_events(request.match_id)
 
-        # Generate predictions
         predictions = await prediction_engine.calculate_live_probabilities(
-            match[0] if isinstance(match, list) else match,  # Handle list response
+            match,
             events,
             request.current_minute
         )
@@ -190,9 +237,8 @@ async def search_tactical_patterns(
     Search for tactical patterns using semantic understanding
     """
     try:
-        # Fetch all available events and matches for search
-        events = await data_service.get_live_events("")  # Would need to fetch all events
-        matches = await data_service.get_matches("", "")  # Would need to fetch all matches
+        events = await data_service.get_all_events()
+        matches = await data_service.get_all_matches()
 
         results = await search_engine.semantic_search(
             request.query,
@@ -239,9 +285,8 @@ async def find_similar_teams(
         if not target_team:
             raise HTTPException(status_code=404, detail="Target team not found")
 
-        # Fetch match data for analysis
-        matches = await data_service.get_matches("", "")
-        events = await data_service.get_live_events("")
+        matches = await data_service.get_all_matches()
+        events = await data_service.get_all_events()
 
         similar_teams = await search_engine.find_similar_tactical_styles(
             target_team, teams, matches, events
@@ -280,15 +325,14 @@ async def detect_tactical_anomalies(
     Detect tactical anomalies that should trigger alerts
     """
     try:
-        # Fetch match data
-        match = await data_service.get_matches("", "")
+        match = await data_service.get_match_by_id(request.match_id)
         if not match:
             raise HTTPException(status_code=404, detail="Match not found")
 
         events = await data_service.get_live_events(request.match_id)
 
         anomalies = await search_engine.detect_tactical_anomalies(
-            match[0] if isinstance(match, list) else match,
+            match,
             events,
             request.current_minute
         )
@@ -324,8 +368,7 @@ async def generate_match_autopsy(
     Generate comprehensive post-match tactical autopsy
     """
     try:
-        # Fetch match data
-        match = await data_service.get_matches("", "")
+        match = await data_service.get_match_by_id(match_id)
         if not match:
             raise HTTPException(status_code=404, detail="Match not found")
 
@@ -336,23 +379,213 @@ async def generate_match_autopsy(
         }
 
         autopsy = await ai_service.generate_post_match_autopsy(
-            match[0] if isinstance(match, list) else match,
+            match,
             events,
             team_stats
         )
 
         return {
             "match_id": match_id,
-            "autopsy": {
-                "executive_summary": autopsy.executive_summary,
-                "tactical_performance": autopsy.tactical_performance,
-                "player_ratings": autopsy.player_ratings,
-                "key_moments": autopsy.key_moments,
-                "future_recommendations": autopsy.future_recommendations,
-                "scouting_report": autopsy.scouting_report
-            }
+            "autopsy": autopsy
         }
 
     except Exception as e:
         logger.error(f"Failed to generate match autopsy: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate match autopsy")
+
+
+@router.post("/search/semantic", response_model=Dict[str, Any])
+async def semantic_event_search(
+    request: SemanticSearchRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        events = await data_service.get_all_events()
+        results = await ai_service.search_match_events_semantic(request.query, events, request.limit)
+        return {"query": request.query, "results": [result.model_dump() for result in results]}
+    except Exception as e:
+        logger.error(f"Failed to run semantic event search: {e}")
+        raise HTTPException(status_code=500, detail="Failed to run semantic event search")
+
+
+@router.post("/xt/momentum", response_model=Dict[str, Any])
+async def compute_xt_momentum(
+    request: XTMomentumRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        match = await data_service.get_match_by_id(request.match_id)
+        if not match:
+            raise HTTPException(status_code=404, detail="Match not found")
+        events = await data_service.get_live_events(request.match_id)
+        momentum = await ai_service.compute_xt_momentum(events, match.home_team_id, match.away_team_id)
+        return {"match_id": request.match_id, "momentum": [m.model_dump() for m in momentum]}
+    except Exception as e:
+        logger.error(f"Failed to compute xT momentum: {e}")
+        raise HTTPException(status_code=500, detail="Failed to compute xT momentum")
+
+
+@router.post("/simulate/substitution", response_model=Dict[str, Any])
+async def simulate_substitution(
+    request: SubstitutionSimulationRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        match = await data_service.get_match_by_id(request.match_id)
+        if not match:
+            raise HTTPException(status_code=404, detail="Match not found")
+        events = await data_service.get_live_events(request.match_id)
+        impact = await ai_service.simulate_substitution_impact(
+            match,
+            events,
+            request.team_id,
+            request.out_player_id,
+            request.in_player_profile,
+            request.iterations
+        )
+        return {"impact": impact.model_dump()}
+    except Exception as e:
+        logger.error(f"Failed to simulate substitution impact: {e}")
+        raise HTTPException(status_code=500, detail="Failed to simulate substitution impact")
+
+
+@router.post("/scouting/report", response_model=Dict[str, Any])
+async def generate_scouting_report(
+    request: ScoutingReportRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        match = await data_service.get_match_by_id(request.match_id)
+        if not match:
+            raise HTTPException(status_code=404, detail="Match not found")
+        events = await data_service.get_live_events(request.match_id)
+        team_stats = {
+            "home": {"possession": 55, "shots": 12, "pass_accuracy": 87},
+            "away": {"possession": 45, "shots": 8, "pass_accuracy": 82}
+        }
+        report = await ai_service.generate_scout_report(match, events, team_stats)
+        return {"match_id": request.match_id, "scouting_report": report}
+    except Exception as e:
+        logger.error(f"Failed to generate scouting report: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate scouting report")
+
+
+@router.post("/ghosting", response_model=Dict[str, Any])
+async def analyze_ghosting(
+    request: GhostingRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        events = await data_service.get_live_events(request.match_id)
+        frames = await data_service.get_tactical_frames(request.match_id)
+        insights = await ai_service.ghosting_analysis(events, frames)
+        return {"match_id": request.match_id, "insights": [insight.model_dump() for insight in insights]}
+    except Exception as e:
+        logger.error(f"Failed to analyze ghosting: {e}")
+        raise HTTPException(status_code=500, detail="Failed to analyze ghosting")
+
+
+@router.post("/formation/switches", response_model=Dict[str, Any])
+async def detect_formation_switches(
+    request: FormationSwitchRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        frames = await data_service.get_tactical_frames(request.match_id)
+        switches = await ai_service.detect_formation_switches(frames, request.team_id)
+        return {"match_id": request.match_id, "switches": [switch.model_dump() for switch in switches]}
+    except Exception as e:
+        logger.error(f"Failed to detect formation switches: {e}")
+        raise HTTPException(status_code=500, detail="Failed to detect formation switches")
+
+
+@router.post("/pitch-control", response_model=Dict[str, Any])
+async def build_pitch_control(
+    request: PitchControlRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        frames = await data_service.get_tactical_frames(request.match_id)
+        annotation = await ai_service.build_pitch_control_voronoi(frames, request.current_minute)
+        return {"match_id": request.match_id, "current_minute": request.current_minute, "pitch_control": annotation}
+    except Exception as e:
+        logger.error(f"Failed to build pitch control map: {e}")
+        raise HTTPException(status_code=500, detail="Failed to build pitch control map")
+
+
+@router.post("/player-dna", response_model=Dict[str, Any])
+async def find_player_dna(
+    request: PlayerDNARequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        players = await data_service.get_players(request.team_id)
+        stats = await data_service.get_player_stats(request.match_id)
+        results = await ai_service.match_player_dna(request.player_id, players, stats, request.limit)
+        return {"player_id": request.player_id, "results": [result.model_dump() for result in results]}
+    except Exception as e:
+        logger.error(f"Failed to find player DNA matches: {e}")
+        raise HTTPException(status_code=500, detail="Failed to find player DNA matches")
+
+
+@router.post("/pressing/heatmap", response_model=Dict[str, Any])
+async def pressing_heatmap(
+    request: PressingHeatmapRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        match = await data_service.get_match_by_id(request.match_id)
+        if not match:
+            raise HTTPException(status_code=404, detail="Match not found")
+        events = await data_service.get_live_events(request.match_id)
+        heatmap = await ai_service.compute_pressing_heatmap(events, match.home_team_id, match.away_team_id)
+        return {"match_id": request.match_id, "heatmap": heatmap}
+    except Exception as e:
+        logger.error(f"Failed to compute pressing heatmap: {e}")
+        raise HTTPException(status_code=500, detail="Failed to compute pressing heatmap")
+
+
+@router.post("/fatigue/decay", response_model=Dict[str, Any])
+async def fatigue_decay(
+    request: FatigueDecayRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        stats = await data_service.get_player_stats(request.match_id)
+        player_stats = next((s for s in stats if s.player_id == request.player_id), None)
+        if not player_stats:
+            raise HTTPException(status_code=404, detail="Player stats not found")
+        events = await data_service.get_live_events(request.match_id)
+        projection = await ai_service.simulate_biometric_decay(request.player_id, request.match_id, player_stats, events)
+        return {"projection": projection.model_dump()}
+    except Exception as e:
+        logger.error(f"Failed to project fatigue decay: {e}")
+        raise HTTPException(status_code=500, detail="Failed to project fatigue decay")
+
+
+@router.post("/referee/bias", response_model=Dict[str, Any])
+async def referee_bias(
+    request: RefereeBiasRequest,
+    ai_service = Depends(get_ai_service),
+    data_service = Depends(get_data_service)
+):
+    try:
+        match = await data_service.get_match_by_id(request.match_id)
+        if not match:
+            raise HTTPException(status_code=404, detail="Match not found")
+        events = await data_service.get_live_events(request.match_id)
+        summary = await ai_service.referee_bias_insight(events, match.home_team_id, match.away_team_id)
+        return {"match_id": request.match_id, "referee_bias": summary.model_dump()}
+    except Exception as e:
+        logger.error(f"Failed to analyze referee bias: {e}")
+        raise HTTPException(status_code=500, detail="Failed to analyze referee bias")
