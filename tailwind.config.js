@@ -24,14 +24,17 @@ export default {
         },
         extend: {
             colors: {
-                border: 'hsl(var(--border))',
-                borderColor: {
-                    border: 'hsl(var(--border))'
-                },
-                input: 'hsl(var(--input))',
-                ring: 'hsl(var(--ring))',
+                // Midnight Elite Theme
                 background: 'hsl(var(--background))',
                 foreground: 'hsl(var(--foreground))',
+                card: {
+                    DEFAULT: 'hsl(var(--card))',
+                    foreground: 'hsl(var(--card-foreground))'
+                },
+                popover: {
+                    DEFAULT: 'hsl(var(--popover))',
+                    foreground: 'hsl(var(--popover-foreground))'
+                },
                 primary: {
                     DEFAULT: 'hsl(var(--primary))',
                     foreground: 'hsl(var(--primary-foreground))'
@@ -40,14 +43,38 @@ export default {
                     DEFAULT: 'hsl(var(--secondary))',
                     foreground: 'hsl(var(--secondary-foreground))'
                 },
-                destructive: {
-                    DEFAULT: 'hsl(var(--destructive))',
-                    foreground: 'hsl(var(--destructive-foreground))'
-                },
                 muted: {
                     DEFAULT: 'hsl(var(--muted))',
                     foreground: 'hsl(var(--muted-foreground))'
                 },
+                accent: {
+                    DEFAULT: 'hsl(var(--accent))',
+                    foreground: 'hsl(var(--accent-foreground))'
+                },
+                destructive: {
+                    DEFAULT: 'hsl(var(--destructive))',
+                    foreground: 'hsl(var(--destructive-foreground))'
+                },
+                border: 'hsl(var(--border))',
+                input: 'hsl(var(--input))',
+                ring: 'hsl(var(--ring))',
+                chart: {
+                    '1': 'hsl(var(--chart-1))',
+                    '2': 'hsl(var(--chart-2))',
+                    '3': 'hsl(var(--chart-3))',
+                    '4': 'hsl(var(--chart-4))',
+                    '5': 'hsl(var(--chart-5))'
+                },
+                // Vibrant Neon Accents
+                'electric-lime': '#CCFF00',
+                'cyber-blue': '#00D4FF',
+                'neon-pink': '#FF0080',
+                'glow-green': '#00FF88',
+                'midnight-black': '#0A0A0A',
+                'slate-dark': '#1A1A1A',
+                'slate-medium': '#2A2A2A',
+                'slate-light': '#3A3A3A'
+            },
                 accent: {
                     DEFAULT: 'hsl(var(--accent))',
                     foreground: 'hsl(var(--accent-foreground))'
