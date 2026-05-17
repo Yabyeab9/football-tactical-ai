@@ -5,11 +5,18 @@ const api = axios.create({
   timeout: 20000,
 });
 
+type ApiError = {
+  code?: number;
+  message: string;
+  details?: Record<string, unknown>;
+  type?: string;
+};
+
 type ApiEnvelope<T> = {
   success: boolean;
-  message: string;
   data: T;
-  meta: Record<string, unknown>;
+  error: ApiError;
+  timestamp: string;
 };
 
 export type ProviderStatus = {
@@ -490,7 +497,7 @@ export type AIChatResponse = {
 function normalizeApiError(error: unknown): Error {
   const axiosError = error as AxiosError<ApiEnvelope<unknown>>;
   const message =
-    axiosError.response?.data?.message ??
+    axiosError.response?.data?.error?.message ??
     axiosError.message ??
     "The football intelligence API request failed.";
   return new Error(message);
@@ -500,7 +507,7 @@ async function unwrap<T>(request: Promise<{ data: ApiEnvelope<T> }>): Promise<T>
   try {
     const response = await request;
     if (!response.data.success) {
-      throw new Error(response.data.message || "API request failed");
+      throw new Error(response.data.error?.message || "API request failed");
     }
     return response.data.data;
   } catch (error) {

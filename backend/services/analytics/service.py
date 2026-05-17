@@ -19,7 +19,6 @@ class AnalyticsService:
     def __init__(self, data_service: DataIngestionService):
         self.data_service = data_service
 
-    @lru_cache(maxsize=128)
     async def calculate_pitch_control(self, match_id: str, frame_index: int) -> List[PitchControlCell]:
         cache_key = f"pitch_control:{match_id}:{frame_index}"
         cached = await read_cache(cache_key)
@@ -33,40 +32,32 @@ class AnalyticsService:
             return []
 
         # Extract player positions
-        home_positions = [(p['x'], p['y']) for p in frame.home_team_positions]
-        away_positions = [(p['x'], p['y']) for p in frame.away_team_positions]
-
-        # Create Voronoi diagram
-        all_points = np.array(home_positions + away_positions)
+        home_pos = np.array([(p['x'], p['y']) for p in frame.home_team_positions])
+        away_pos = np.array([(p['x'], p['y']) for p in frame.away_team_positions])
+        
+        all_points = np.vstack([home_pos, away_pos])
         vor = Voronoi(all_points)
 
-        # Calculate control probabilities (simplified)
+        # Discretize pitch into a grid (faster vectorized approach)
+        grid_res = 5
+        x_grid, y_grid = np.mgrid[0:100:grid_res, 0:100:grid_res]
+        grid_points = np.vstack([x_grid.ravel() + grid_res/2, y_grid.ravel() + grid_res/2]).T
+        
+        # Calculate distances to all players (vectorized)
+        dist_home = np.min(np.linalg.norm(grid_points[:, None, :] - home_pos[None, :, :], axis=2), axis=1)
+        dist_away = np.min(np.linalg.norm(grid_points[:, None, :] - away_pos[None, :, :], axis=2), axis=1)
+        
+        # Simple probability based on distance advantage
+        prob_home = 1.0 / (1.0 + np.exp(0.5 * (dist_home - dist_away)))
+        
         cells = []
-        for i, region in enumerate(vor.regions):
-            if -1 in region or len(region) == 0:
-                continue
-            polygon = Polygon([vor.vertices[j] for j in region])
-            # Clip to pitch boundaries
-            pitch = Polygon([(0, 0), (100, 0), (100, 100), (0, 100)])
-            clipped = polygon.intersection(pitch)
-            if clipped.is_empty:
-                continue
-
-            # Determine controlling team
-            point = Point(all_points[i])
-            controlling_team = "home" if i < len(home_positions) else "away"
-            control_prob = 0.6 if controlling_team == "home" else 0.4  # Simplified
-
-            # Discretize into cells
-            for x in np.arange(0, 100, 5):
-                for y in np.arange(0, 100, 5):
-                    if clipped.contains(Point(x + 2.5, y + 2.5)):
-                        cells.append(PitchControlCell(
-                            x=x + 2.5,
-                            y=y + 2.5,
-                            control_probability=control_prob,
-                            controlling_team_id=controlling_team
-                        ))
+        for i, point in enumerate(grid_points):
+            cells.append(PitchControlCell(
+                x=float(point[0]),
+                y=float(point[1]),
+                control_probability=float(prob_home[i]),
+                controlling_team_id="home" if prob_home[i] > 0.5 else "away"
+            ))
 
         await write_cache(cache_key, [cell.dict() for cell in cells], settings.analytics_cache_ttl_seconds)
         return cells

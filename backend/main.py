@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse
 from backend.core.logging import configure_logging
 from backend.core.settings import settings
 from backend.db.database import get_redis_client, initialize_data_store
-
+from dotenv import load_dotenv
+load_dotenv()
 configure_logging()
 
 app = FastAPI(
@@ -29,23 +30,21 @@ app.add_middleware(
 )
 
 
-def build_response(success: bool, message: str, data: object | None = None, meta: dict[str, object] | None = None) -> dict[str, object]:
-    payload = {
-        "success": success,
-        "message": message,
-        "data": data or {},
-        "meta": {"schemaVersion": settings.api_schema_version},
-    }
-    if meta:
-        payload["meta"].update(meta)
-    return payload
+from backend.core.responses import build_response
 
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_: object, exc: HTTPException) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
-        content=build_response(False, exc.detail, None, {"http_status": exc.status_code}),
+        content=build_response(
+            success=False,
+            error={
+                "code": exc.status_code,
+                "message": exc.detail,
+                "type": "HTTPException"
+            }
+        ),
     )
 
 
@@ -53,16 +52,42 @@ async def http_exception_handler(_: object, exc: HTTPException) -> JSONResponse:
 async def validation_exception_handler(_: object, exc: RequestValidationError) -> JSONResponse:
     return JSONResponse(
         status_code=422,
-        content=build_response(False, "Validation error", None, {"errors": exc.errors()}),
+        content=build_response(
+            success=False,
+            error={
+                "code": 422,
+                "message": "Validation error",
+                "details": exc.errors(),
+                "type": "RequestValidationError"
+            }
+        ),
     )
 
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(_: object, exc: Exception) -> JSONResponse:
     logging.getLogger(__name__).exception("Unhandled application error", exc_info=exc)
+    
+    error_msg = "Internal server error"
+    details = {}
+    
+    if settings.environment == "development":
+        error_msg = str(exc)
+        import traceback
+        details["traceback"] = traceback.format_exc()
+        details["error_type"] = exc.__class__.__name__
+
     return JSONResponse(
         status_code=500,
-        content=build_response(False, "Internal server error", None),
+        content=build_response(
+            success=False,
+            error={
+                "code": 500,
+                "message": error_msg,
+                "details": details,
+                "type": "UnhandledException"
+            }
+        ),
     )
 
 
@@ -75,7 +100,7 @@ async def on_startup() -> None:
 async def health_check() -> dict[str, object]:
     redis_client = await get_redis_client()
     redis_status = await redis_client.ping()
-    return build_response(True, "Backend healthy", {"status": "ok", "redis": redis_status})
+    return build_response(True, data={"status": "ok", "redis": redis_status})
 
 
 # Router registration placeholder for future tactical endpoints
@@ -85,7 +110,10 @@ async def health_check() -> dict[str, object]:
 from backend.api.v1.routes.analytics import router as analytics_router
 from backend.api.v1.routes.search import router as search_router
 from backend.api.v1.routes.ai import router as ai_router
+from backend.api.v1.routes.live import router as live_router
 
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
+app.include_router(live_router, prefix="/api", tags=["live"])
+    

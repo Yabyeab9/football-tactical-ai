@@ -32,9 +32,9 @@ class LiveDataService:
             return cached_payload
 
         provider_results = await asyncio.gather(
-            provider_manager.safe_request("football-data", self.football_data_client.get_matches, default_factory=list, expected="list"),
-            provider_manager.safe_request("thesportsdb", self.sportsdb_client.get_live_matches, default_factory=list, expected="list"),
-            provider_manager.safe_request("openligadb", self.openligadb_client.get_current_matches, default_factory=list, expected="list"),
+            provider_manager.safe_request("football-data", self.football_data_client.get_matches, default_factory=list, expected="list", request_key="live:football-data"),
+            provider_manager.safe_request("thesportsdb", self.sportsdb_client.get_live_matches, default_factory=list, expected="list", request_key="live:thesportsdb"),
+            provider_manager.safe_request("openligadb", self.openligadb_client.get_current_matches, default_factory=list, expected="list", request_key="live:openligadb"),
         )
 
         all_matches: list[dict[str, Any]] = []

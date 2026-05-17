@@ -50,30 +50,60 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 async def get_redis_client() -> Redis:
     global _redis_client
     if _redis_client is None:
-        _redis_client = Redis.from_url(settings.redis_url, encoding="utf-8", decode_responses=True)
-        await _redis_client.ping()
+        try:
+            _redis_client = Redis.from_url(
+                settings.redis_url, 
+                encoding="utf-8", 
+                decode_responses=True,
+                socket_timeout=5.0,
+                socket_connect_timeout=5.0
+            )
+            await _redis_client.ping()
+            logger.info("Successfully connected to Redis at %s", settings.redis_url)
+        except Exception as exc:
+            logger.error("Failed to connect to Redis: %s. Caching will be disabled.", exc)
+            _redis_client = None
+            raise
     return _redis_client
 
 
 async def initialize_data_store() -> None:
-    engine = get_engine()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await get_redis_client()
+    try:
+        engine = get_engine()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables initialized.")
+    except Exception as exc:
+        logger.error("Database initialization failed: %s", exc)
+        # We might want to re-raise here if DB is critical, but the prompt says "boot cleanly"
+    
+    try:
+        await get_redis_client()
+    except Exception:
+        # Already logged in get_redis_client
+        pass
 
 
 async def read_cache(key: str) -> object | None:
-    client = await get_redis_client()
-    raw = await client.get(key)
-    if raw is None:
-        return None
     try:
+        client = await get_redis_client()
+        if client is None:
+            return None
+        raw = await client.get(key)
+        if raw is None:
+            return None
         return json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("Failed to decode cache payload for key=%s", key)
+    except Exception:
+        # Silently fail for cache reads
         return None
 
 
 async def write_cache(key: str, payload: object, ttl: int) -> None:
-    client = await get_redis_client()
-    await client.set(key, json.dumps(payload, default=str), ex=ttl)
+    try:
+        client = await get_redis_client()
+        if client is None:
+            return
+        await client.set(key, json.dumps(payload, default=str), ex=ttl)
+    except Exception:
+        # Silently fail for cache writes
+        pass

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Optional, Dict
 
 import httpx
 
@@ -26,7 +26,8 @@ from .data_normalizer import (
     utc_now_iso,
 )
 from .provider_manager import ProviderStatus, provider_manager
-
+from dotenv import load_dotenv
+load_dotenv()
 logger = logging.getLogger(__name__)
 
 
@@ -41,9 +42,19 @@ class ProviderResponseError(RuntimeError):
 class BaseApiClient:
     provider_name = "base"
     base_url = ""
+    _client: Optional[httpx.AsyncClient] = None
 
     def __init__(self) -> None:
         self.timeout = httpx.Timeout(settings.request_timeout_seconds)
+
+    @classmethod
+    def get_client(cls) -> httpx.AsyncClient:
+        if cls._client is None or cls._client.is_closed:
+            cls._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(settings.request_timeout_seconds),
+                limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
+            )
+        return cls._client
 
     async def _get_json(
         self,
@@ -54,17 +65,18 @@ class BaseApiClient:
     ) -> Any:
         if not self.base_url:
             raise ProviderConfigurationError(f"{self.provider_name} base URL is not configured")
+        
         url = f"{self.base_url.rstrip('/')}/{path.lstrip('/')}"
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(url, params=params or {}, headers=headers or {})
-            if response.status_code >= 400:
-                raise ProviderResponseError(
-                    f"{self.provider_name} returned {response.status_code} for {path}"
-                )
-            try:
-                return response.json()
-            except ValueError as exc:
-                raise ProviderResponseError(f"{self.provider_name} returned invalid JSON for {path}") from exc
+        client = self.get_client()
+        
+        response = await client.get(url, params=params or {}, headers=headers or {})
+        # Raise for status so that ProviderManager can catch 429 and other HTTP errors
+        response.raise_for_status()
+        
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise ProviderResponseError(f"{self.provider_name} returned invalid JSON for {path}") from exc
 
     async def _get_optional_json(
         self,
@@ -77,8 +89,8 @@ class BaseApiClient:
         try:
             payload = await self._get_json(path, params=params, headers=headers)
             return payload if payload is not None else fallback
-        except Exception:
-            logger.warning("Optional provider request failed for %s %s", self.provider_name, path)
+        except Exception as exc:
+            logger.warning("Optional provider request failed for %s %s: %s", self.provider_name, path, exc)
             return fallback
 
 

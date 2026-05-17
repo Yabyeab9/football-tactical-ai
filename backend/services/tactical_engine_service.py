@@ -78,6 +78,7 @@ class TacticalEngineService:
             lambda: self.football_data_client.get_match(match_id),
             default_factory=dict,
             expected="dict",
+            request_key=f"match:football-data:{match_id}"
         )
         match_payload = ensure_dict(match_payload)
         home_team_payload = ensure_dict(match_payload.get("homeTeam"))
@@ -137,6 +138,7 @@ class TacticalEngineService:
             lambda: self.sportsdb_client.get_match_details(match_id),
             default_factory=dict,
             expected="dict",
+            request_key=f"match:thesportsdb:{match_id}"
         )
         payload = ensure_dict(payload)
         event = ensure_dict(payload.get("event"))

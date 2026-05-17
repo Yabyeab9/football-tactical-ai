@@ -1,36 +1,43 @@
 from __future__ import annotations
 
-from typing import List
+from typing import List, Any
 from fastapi import APIRouter, Depends, Query
 
-from backend.db.database import get_db_session
+from backend.core.responses import build_response
 from backend.services.analytics.service import AnalyticsService
 from backend.services.data_ingestion.service import DataIngestionService
-from backend.models.schemas import PitchControlCell, ThreatFlowPoint, PressingZone, PredictionResult
 
 
 router = APIRouter()
 
-def get_analytics_service(db_session=Depends(get_db_session)) -> AnalyticsService:
+def get_analytics_service() -> AnalyticsService:
     data_service = DataIngestionService()
     return AnalyticsService(data_service)
 
 
-@router.get("/pitch-control", response_model=List[PitchControlCell])
+@router.get("/pitch-control")
 async def get_pitch_control(
     match_id: str = Query(..., description="Match ID"),
-    frame_index: int = Query(..., description="Frame index"),
+    frame_index: int = Query(0, description="Frame index"),
     service: AnalyticsService = Depends(get_analytics_service)
 ):
-    return await service.calculate_pitch_control(match_id, frame_index)
+    try:
+        result = await service.calculate_pitch_control(match_id, frame_index)
+        return build_response(success=True, data=result.get("data"), meta=result.get("meta"))
+    except Exception as e:
+        return build_response(success=False, error={"message": str(e), "type": "AnalyticsError"})
 
 
-@router.get("/threat-flow", response_model=List[ThreatFlowPoint])
+@router.get("/threat-flow")
 async def get_threat_flow(
     match_id: str = Query(..., description="Match ID"),
     service: AnalyticsService = Depends(get_analytics_service)
 ):
-    return await service.calculate_threat_flow(match_id)
+    try:
+        result = await service.calculate_threat_flow(match_id)
+        return build_response(success=True, data=result.get("data"), meta=result.get("meta"))
+    except Exception as e:
+        return build_response(success=False, error={"message": str(e), "type": "AnalyticsError"})
 
 
 @router.get("/pass-networks")
@@ -39,20 +46,32 @@ async def get_pass_network(
     team_id: str = Query(..., description="Team ID"),
     service: AnalyticsService = Depends(get_analytics_service)
 ):
-    return await service.calculate_pass_network(match_id, team_id)
+    try:
+        result = await service.calculate_pass_network(match_id, team_id)
+        return build_response(success=True, data=result.get("data"), meta=result.get("meta"))
+    except Exception as e:
+        return build_response(success=False, error={"message": str(e), "type": "AnalyticsError"})
 
 
-@router.get("/pressing-efficiency", response_model=List[PressingZone])
+@router.get("/pressing-efficiency")
 async def get_pressing_efficiency(
     match_id: str = Query(..., description="Match ID"),
     service: AnalyticsService = Depends(get_analytics_service)
 ):
-    return await service.calculate_pressing_efficiency(match_id)
+    try:
+        result = await service.calculate_pressing_efficiency(match_id)
+        return build_response(success=True, data=result.get("data"), meta=result.get("meta"))
+    except Exception as e:
+        return build_response(success=False, error={"message": str(e), "type": "AnalyticsError"})
 
 
-@router.get("/prediction/live", response_model=PredictionResult)
+@router.get("/prediction/live")
 async def get_live_prediction(
     match_id: str = Query(..., description="Match ID"),
     service: AnalyticsService = Depends(get_analytics_service)
 ):
-    return await service.predict_live(match_id)
+    try:
+        result = await service.predict_live(match_id)
+        return build_response(success=True, data=result.get("data"), meta=result.get("meta"))
+    except Exception as e:
+        return build_response(success=False, error={"message": str(e), "type": "AnalyticsError"})

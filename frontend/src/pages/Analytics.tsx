@@ -134,9 +134,9 @@ export default function Analytics() {
                           Home Metrics
                         </div>
                         <div className="mt-4 space-y-2 text-sm">
-                          <div>Possession: {analysis.analysis.metrics.home.possessionTrend ?? analysis.analysis.metrics.home.possession_trend ?? 0}%</div>
-                          <div>Projected shots: {analysis.analysis.metrics.home.projectedShots ?? analysis.analysis.metrics.home.projected_shots ?? 0}</div>
-                          <div>Momentum: {analysis.analysis.momentum?.home ?? analysis.team_analysis.momentum ?? 0}</div>
+                          <div>Possession: {analysis?.analysis?.metrics?.home?.possessionTrend ?? analysis?.analysis?.metrics?.home?.possession_trend ?? 0}%</div>
+                          <div>Projected shots: {analysis?.analysis?.metrics?.home?.projectedShots ?? analysis?.analysis?.metrics?.home?.projected_shots ?? 0}</div>
+                          <div>Momentum: {analysis?.analysis?.momentum?.home ?? analysis?.team_analysis?.momentum ?? 0}</div>
                         </div>
                       </CardContent>
                     </Card>
@@ -147,21 +147,21 @@ export default function Analytics() {
                           <ClipboardList className="h-4 w-4 text-primary" />
                           Model Verdict
                         </div>
-                        <div className="mt-4 text-sm text-muted-foreground">{analysis.analysis.prediction.verdict}</div>
+                        <div className="mt-4 text-sm text-muted-foreground">{analysis?.analysis?.prediction?.verdict ?? "No verdict available"}</div>
                       </CardContent>
                     </Card>
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-3">
-                      {analysis.analysis.strengths.map((item) => (
+                      {(analysis?.analysis?.strengths ?? []).map((item) => (
                         <div key={item} className="rounded-2xl bg-emerald-500/10 px-4 py-3 text-sm">
                           {item}
                         </div>
                       ))}
                     </div>
                     <div className="space-y-3">
-                      {analysis.analysis.weaknesses.map((item) => (
+                      {(analysis?.analysis?.weaknesses ?? []).map((item) => (
                         <div key={item} className="rounded-2xl bg-amber-500/10 px-4 py-3 text-sm">
                           {item}
                         </div>
@@ -171,8 +171,8 @@ export default function Analytics() {
                 </TabsContent>
 
                 <TabsContent value="timeline" className="space-y-4">
-                  {analysis.timeline.length > 0 ? (
-                    analysis.timeline.map((event) => (
+                  {(analysis?.timeline ?? []).length > 0 ? (
+                    (analysis?.timeline ?? []).map((event) => (
                       <div key={`${event.minute}-${event.description}`} className="rounded-2xl border border-border/60 p-4">
                         <div className="font-semibold">{event.minute}' • {event.type}</div>
                         <div className="mt-1 text-sm text-muted-foreground">

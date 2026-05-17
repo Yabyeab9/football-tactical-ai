@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
-
+import logging
 from backend.core.settings import settings
 
 from .manager_profile_service import ManagerProfileService
@@ -84,22 +84,50 @@ class AIFootballChatService:
         ]
         input_items.append({"role": "user", "content": [{"type": "input_text", "text": prompt}]})
 
+
+        logger = logging.getLogger(__name__)
+
         async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(
-                "https://api.openai.com/v1/responses",
-                headers={
-                    "Authorization": f"Bearer {settings.openai_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": settings.openai_model,
-                    "input": input_items,
-                    "max_output_tokens": 500,
-                },
-            )
-            response.raise_for_status()
-            payload = response.json()
-        return self._extract_openai_text(payload)
+            try:
+                response = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={
+                        "Authorization": f"Bearer {settings.openai_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": settings.openai_model,
+                        "input": input_items,
+                        "max_output_tokens": 500,
+                    },
+                )
+
+                # Parse JSON safely (even for errors)
+                payload = response.json()
+
+                # 🔴 Handle non-200 responses properly
+                if response.status_code != 200:
+                    logger.error(f"OpenAI API error ({response.status_code}): {payload}")
+
+                    return {
+                        "error": payload.get("error", {}).get("code", "unknown_error"),
+                        "message": payload.get("error", {}).get("message", "OpenAI request failed"),
+                        "status_code": response.status_code,
+                    }
+
+                return self._extract_openai_text(payload)
+
+            except httpx.TimeoutException:
+                logger.error("OpenAI request timed out")
+                return {"error": "timeout"}
+
+            except httpx.RequestError as e:
+                logger.error(f"OpenAI request failed: {str(e)}")
+                return {"error": "request_failed", "message": str(e)}
+
+            except Exception as e:
+                logger.exception("Unexpected OpenAI error")
+                return {"error": "unknown_exception", "message": str(e)}
 
     def _extract_openai_text(self, payload: dict[str, Any]) -> str:
         if payload.get("output_text"):

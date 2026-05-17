@@ -53,7 +53,11 @@ class AIService:
                 match_id=match_id,
                 summary="Unable to generate summary",
                 key_insights=[],
-            generated_at=datetime.utcnow()
+                generated_at=datetime.utcnow()
+            )
+
+        payload = response.json()
+        summary_text = payload.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "No summary generated")
         insights = summary_text.split("\n")[-5:]  # Extract insights
 
         return TacticalSummary(

@@ -1,45 +1,42 @@
 import asyncio
-import time
-from dataclasses import dataclass
-from typing import Any
+import json
+import logging
+from typing import Any, Optional
 
+from backend.db.database import get_redis_client
 
-@dataclass
-class CacheEntry:
-    value: Any
-    expires_at: float | None
-    created_at: float
+logger = logging.getLogger(__name__)
 
-    @property
-    def is_expired(self) -> bool:
-        return self.expires_at is not None and self.expires_at <= time.time()
-
-
-class AsyncTTLCache:
-    def __init__(self) -> None:
-        self._store: dict[str, CacheEntry] = {}
-        self._lock = asyncio.Lock()
-
-    async def get(self, key: str, allow_stale: bool = False) -> Any | None:
-        async with self._lock:
-            entry = self._store.get(key)
-            if entry is None:
+class RedisCache:
+    """Production-grade Redis cache wrapper."""
+    
+    async def get(self, key: str) -> Any | None:
+        try:
+            client = await get_redis_client()
+            raw = await client.get(key)
+            if raw is None:
                 return None
+            return json.loads(raw)
+        except Exception as exc:
+            logger.warning("Cache GET failed for key %s: %s", key, exc)
+            return None
 
-            if entry.is_expired and not allow_stale:
-                self._store.pop(key, None)
-                return None
-
-            return entry.value
-
-    async def set(self, key: str, value: Any, ttl: int | None = 60) -> None:
-        async with self._lock:
-            expires_at = time.time() + ttl if ttl else None
-            self._store[key] = CacheEntry(value=value, expires_at=expires_at, created_at=time.time())
+    async def set(self, key: str, value: Any, ttl: int = 60) -> None:
+        try:
+            client = await get_redis_client()
+            await client.set(
+                key, 
+                json.dumps(value, default=str), 
+                ex=ttl
+            )
+        except Exception as exc:
+            logger.warning("Cache SET failed for key %s: %s", key, exc)
 
     async def delete(self, key: str) -> None:
-        async with self._lock:
-            self._store.pop(key, None)
+        try:
+            client = await get_redis_client()
+            await client.delete(key)
+        except Exception as exc:
+            logger.warning("Cache DELETE failed for key %s: %s", key, exc)
 
-
-cache = AsyncTTLCache()
+cache = RedisCache()

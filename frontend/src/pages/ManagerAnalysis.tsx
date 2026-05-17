@@ -57,7 +57,7 @@ export default function ManagerAnalysis() {
                     Style Labels
                   </div>
                   <div className="mt-3 text-2xl font-black">
-                    {new Set(managers.map((item) => item.manager.tacticalStyle.label)).size}
+                    {new Set(managers.map((item) => item?.manager?.tacticalStyle?.label ?? item?.manager?.tactical_style?.label ?? "Unknown")).size}
                   </div>
                 </CardContent>
               </Card>
@@ -85,7 +85,7 @@ export default function ManagerAnalysis() {
                         <CardTitle className="text-2xl">{entry.manager.name}</CardTitle>
                         <div className="mt-2 text-sm text-muted-foreground">{entry.manager.team.name}</div>
                       </div>
-                      <Badge variant="outline">{entry.manager.tacticalStyle.label}</Badge>
+                      <Badge variant="outline">{entry?.manager?.tacticalStyle?.label ?? entry?.manager?.tactical_style?.label ?? "Standard"}</Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-5">
@@ -110,9 +110,9 @@ export default function ManagerAnalysis() {
 
                     <div className="rounded-[1.5rem] bg-slate-950 p-5 text-white">
                       <div className="text-xs uppercase tracking-[0.2em] text-emerald-200">Tactical style</div>
-                      <p className="mt-3 text-sm leading-6 text-white/85">{entry.manager.tacticalStyle.summary}</p>
+                      <p className="mt-3 text-sm leading-6 text-white/85">{entry?.manager?.tacticalStyle?.summary ?? entry?.manager?.tactical_style?.summary ?? "No tactical summary available"}</p>
                       <div className="mt-4 flex flex-wrap gap-2">
-                        {entry.manager.tacticalStyle.traits.map((trait) => (
+                        {(entry?.manager?.tacticalStyle?.traits ?? entry?.manager?.tactical_style?.traits ?? []).map((trait) => (
                           <span key={trait} className="rounded-full bg-white/10 px-3 py-1 text-xs">
                             {trait}
                           </span>

@@ -1,0 +1,113 @@
+version: "3.9"
+
+services:
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: ops/docker/python-service.Dockerfile
+      args:
+        SERVICE_MODULE: apps.api_gateway.app.main:app
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+      - postgres
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: ops/docker/python-service.Dockerfile
+      args:
+        SERVICE_MODULE: apps.auth_service.app.main:app
+    ports:
+      - "8081:8080"
+
+  data-ingestion:
+    build:
+      context: ..
+      dockerfile: ops/docker/python-service.Dockerfile
+      args:
+        SERVICE_MODULE: apps.data_ingestion.app.main:app
+    ports:
+      - "8082:8080"
+    depends_on:
+      - redis
+      - postgres
+
+  ai-engine:
+    build:
+      context: ..
+      dockerfile: ops/docker/python-service.Dockerfile
+      args:
+        SERVICE_MODULE: apps.ai_engine.app.main:app
+    ports:
+      - "8083:8080"
+    depends_on:
+      - redis
+
+  realtime-engine:
+    build:
+      context: ..
+      dockerfile: ops/docker/python-service.Dockerfile
+      args:
+        SERVICE_MODULE: apps.realtime_engine.app.main:app
+    ports:
+      - "8084:8080"
+    depends_on:
+      - redis
+
+  simulation-engine:
+    build:
+      context: ..
+      dockerfile: ops/docker/python-service.Dockerfile
+      args:
+        SERVICE_MODULE: apps.simulation_engine.app.main:app
+    ports:
+      - "8085:8080"
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: football
+      POSTGRES_PASSWORD: football
+      POSTGRES_DB: football_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  timeseries:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: football
+      POSTGRES_PASSWORD: football
+      POSTGRES_DB: football_timeseries
+    ports:
+      - "5433:5432"
+    volumes:
+      - timeseries-data:/var/lib/postgresql/data
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres-data:
+  timeseries-data:
