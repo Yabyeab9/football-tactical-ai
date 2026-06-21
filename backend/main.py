@@ -91,9 +91,26 @@ async def unhandled_exception_handler(_: object, exc: Exception) -> JSONResponse
     )
 
 
+import asyncio
+from backend.services.live_data_service import LiveDataService
+
+async def broadcast_live_data():
+    service = LiveDataService()
+    while True:
+        try:
+            data = await service.get_live_matches()
+            await ws_manager.broadcast_global({
+                "type": "LIVE_MATCHES_UPDATE",
+                "data": data["data"]
+            })
+        except Exception as e:
+            logging.error(f"Error broadcasting live data: {e}")
+        await asyncio.sleep(60) # Broadcast every 60 seconds
+
 @app.on_event("startup")
 async def on_startup() -> None:
     await initialize_data_store()
+    asyncio.create_task(broadcast_live_data())
 
 
 @app.get("/api/health", tags=["infra"])
@@ -111,9 +128,30 @@ from backend.api.v1.routes.analytics import router as analytics_router
 from backend.api.v1.routes.search import router as search_router
 from backend.api.v1.routes.ai import router as ai_router
 from backend.api.v1.routes.live import router as live_router
+from backend.core.websocket import manager as ws_manager
+from fastapi import WebSocket, WebSocketDisconnect
 
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(search_router, prefix="/api/search", tags=["search"])
 app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
 app.include_router(live_router, prefix="/api", tags=["live"])
+
+@app.websocket("/ws/live")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+@app.websocket("/ws/match/{match_id}")
+async def match_websocket_endpoint(websocket: WebSocket, match_id: str):
+    await ws_manager.connect(websocket, match_id)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, match_id)
     

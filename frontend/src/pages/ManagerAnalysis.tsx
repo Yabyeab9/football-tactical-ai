@@ -18,111 +18,67 @@ export default function ManagerAnalysis() {
 
   return (
     <MainLayout>
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
         <PageHero
           eyebrow="Managers"
-          title="Coach identity, tactical style, and performance context."
-          description="Manager intelligence sits on top of team form, structural tendencies, and squad context. It is designed to answer how a coach wants to control matches, not just what the scoreline says."
+          title="Coach identity and tactical identity."
+          description="Decoding how elite coaches control matches through structural tendencies and squad context."
           badge={`${managers.length} managers profiled`}
         />
 
         {error ? (
           <Card className="border-destructive/30">
-            <CardContent className="py-8 text-sm text-destructive">{error}</CardContent>
+            <CardContent className="py-4 text-sm text-destructive">{error}</CardContent>
           </Card>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-3">
-          {loading ? (
-            Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-36 rounded-[1.75rem]" />)
-          ) : (
-            <>
-              <Card className="rounded-[1.75rem] border-border/60">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <Trophy className="h-4 w-4 text-primary" />
-                    Highest PPM
-                  </div>
-                  <div className="mt-3 text-2xl font-black">
-                    {managers.length
-                      ? Math.max(...managers.map((item) => Number(item.record.pointsPerMatch ?? item.record.points_per_match ?? 0))).toFixed(2)
-                      : "0.00"}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="rounded-[1.75rem] border-border/60">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <BrainCircuit className="h-4 w-4 text-primary" />
-                    Style Labels
-                  </div>
-                  <div className="mt-3 text-2xl font-black">
-                    {new Set(managers.map((item) => item?.manager?.tacticalStyle?.label ?? item?.manager?.tactical_style?.label ?? "Unknown")).size}
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="rounded-[1.75rem] border-border/60">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <Shield className="h-4 w-4 text-primary" />
-                    Managers in focus
-                  </div>
-                  <div className="mt-3 text-2xl font-black">{managers.length}</div>
-                </CardContent>
-              </Card>
-            </>
-          )}
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
+           <MetricCard label="Highest PPM" value={managers.length ? Math.max(...managers.map((item) => Number(item.record.pointsPerMatch ?? 0))).toFixed(2) : "0.00"} icon={Trophy} />
+           <MetricCard label="Style Labels" value={new Set(managers.map((item) => item?.manager?.tacticalStyle?.label ?? "Unknown")).size} icon={BrainCircuit} />
+           <MetricCard label="In Focus" value={managers.length} icon={Shield} />
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {loading
-            ? Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-80 rounded-[1.75rem]" />)
+            ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-[1.75rem]" />)
             : managers.map((entry) => (
-                <Card key={entry.manager.id} className="rounded-[1.75rem] border-border/60">
-                  <CardHeader className="space-y-3">
+                <Card key={entry.manager.id} className="rounded-[2rem] border-white/5 bg-[#0A0C10] overflow-hidden group hover:border-primary/30 transition-all">
+                  <CardHeader className="p-6 pb-2">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <CardTitle className="text-2xl">{entry.manager.name}</CardTitle>
-                        <div className="mt-2 text-sm text-muted-foreground">{entry.manager.team.name}</div>
+                        <CardTitle className="text-xl font-black">{entry.manager.name}</CardTitle>
+                        <div className="text-xs font-medium text-white/40">{entry.manager.team.name}</div>
                       </div>
-                      <Badge variant="outline">{entry?.manager?.tacticalStyle?.label ?? entry?.manager?.tactical_style?.label ?? "Standard"}</Badge>
+                      <Badge className="bg-primary/10 text-primary border-primary/20 rounded-lg">
+                        {entry?.manager?.tacticalStyle?.label ?? "Standard"}
+                      </Badge>
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-5">
-                    <div className="grid grid-cols-4 gap-3 text-sm">
-                      <div className="rounded-2xl bg-muted/30 p-3">
-                        <div className="text-muted-foreground">Matches</div>
-                        <div className="mt-1 text-lg font-semibold">{entry.record.matches}</div>
-                      </div>
-                      <div className="rounded-2xl bg-muted/30 p-3">
-                        <div className="text-muted-foreground">Wins</div>
-                        <div className="mt-1 text-lg font-semibold">{entry.record.wins}</div>
-                      </div>
-                      <div className="rounded-2xl bg-muted/30 p-3">
-                        <div className="text-muted-foreground">Draws</div>
-                        <div className="mt-1 text-lg font-semibold">{entry.record.draws}</div>
-                      </div>
-                      <div className="rounded-2xl bg-muted/30 p-3">
-                        <div className="text-muted-foreground">PPM</div>
-                        <div className="mt-1 text-lg font-semibold">{Number(entry.record.pointsPerMatch ?? entry.record.points_per_match ?? 0).toFixed(2)}</div>
-                      </div>
+                  <CardContent className="p-6 space-y-4">
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { label: 'MP', val: entry.record.matches },
+                        { label: 'W', val: entry.record.wins },
+                        { label: 'D', val: entry.record.draws },
+                        { label: 'PPM', val: Number(entry.record.pointsPerMatch ?? 0).toFixed(2) }
+                      ].map(stat => (
+                        <div key={stat.label} className="bg-white/5 rounded-xl p-2 text-center">
+                          <div className="text-[8px] font-black text-white/20 uppercase tracking-widest">{stat.label}</div>
+                          <div className="text-sm font-bold text-white">{stat.val}</div>
+                        </div>
+                      ))}
                     </div>
 
-                    <div className="rounded-[1.5rem] bg-slate-950 p-5 text-white">
-                      <div className="text-xs uppercase tracking-[0.2em] text-emerald-200">Tactical style</div>
-                      <p className="mt-3 text-sm leading-6 text-white/85">{entry?.manager?.tacticalStyle?.summary ?? entry?.manager?.tactical_style?.summary ?? "No tactical summary available"}</p>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {(entry?.manager?.tacticalStyle?.traits ?? entry?.manager?.tactical_style?.traits ?? []).map((trait) => (
-                          <span key={trait} className="rounded-full bg-white/10 px-3 py-1 text-xs">
+                    <div className="rounded-2xl bg-slate-950 p-4 border border-white/5">
+                      <div className="text-[9px] font-black uppercase tracking-[0.2em] text-primary mb-2">Identity</div>
+                      <p className="text-xs leading-relaxed text-white/60 line-clamp-3">{entry?.manager?.tacticalStyle?.summary ?? "Tactical profiling in progress..."}</p>
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {(entry?.manager?.tacticalStyle?.traits ?? []).slice(0, 3).map((trait) => (
+                          <span key={trait} className="rounded-full bg-white/5 border border-white/10 px-2 py-0.5 text-[9px] font-bold text-white/40">
                             {trait}
                           </span>
                         ))}
                       </div>
-                    </div>
-
-                    <div className="space-y-2 text-sm text-muted-foreground">
-                      <div>Recent team history tracked: {(entry.teamHistory ?? entry.team_history ?? []).length} matches</div>
-                      <div>Nationality: {entry.manager.nationality ?? "Unknown"}</div>
                     </div>
                   </CardContent>
                 </Card>

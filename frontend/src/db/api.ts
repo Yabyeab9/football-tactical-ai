@@ -1,6 +1,6 @@
 import axios, { type AxiosError } from "axios";
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000",
   timeout: 20000,
 });
@@ -23,9 +23,7 @@ export type ProviderStatus = {
   provider: string;
   success: boolean;
   latencyMs?: number | null;
-  latency_ms?: number | null;
   itemCount?: number;
-  item_count?: number;
   error: string | null;
   stale: boolean;
 };
@@ -34,10 +32,8 @@ export type TeamRef = {
   id: string | null;
   name: string;
   shortName?: string | null;
-  short_name?: string | null;
   crest?: string | null;
   providerIds?: Record<string, string>;
-  provider_ids?: Record<string, string>;
 };
 
 export type LiveMatch = {
@@ -61,27 +57,19 @@ export type LiveMatch = {
   minute: number;
   providers: string[];
   externalIds: Record<string, string>;
-  external_ids: Record<string, string>;
   homeTeamRef: TeamRef;
   awayTeamRef: TeamRef;
-  home_team: TeamRef;
-  away_team: TeamRef;
   scheduledAt: string;
-  scheduled_at: string;
 };
 
 export type LiveMatchesResponse = {
   matches: LiveMatch[];
   summary: {
     totalMatches: number;
-    total_matches: number;
     liveMatches: number;
-    live_matches: number;
     trackedCompetitions: number;
-    tracked_competitions: number;
   };
   providerStatus: ProviderStatus[];
-  provider_status: ProviderStatus[];
 };
 
 export type MatchHistoryResponse = {
@@ -434,21 +422,11 @@ export type DashboardSummaryResponse = {
     value: number;
     tone: string;
   }>;
-  overview_cards: Array<{
-    label: string;
-    value: number;
-    tone: string;
-  }>;
   systemStatus: ProviderStatus[];
-  system_status: ProviderStatus[];
   liveBoard: LiveMatch[];
-  live_board: LiveMatch[];
   featuredMatch: LiveMatch | null;
-  featured_match: LiveMatch | null;
   tacticalSpotlight: TacticalAnalysisResponse | null;
-  tactical_spotlight: TacticalAnalysisResponse | null;
   injuryWatch: InjuryWatchResponse["watchlist"];
-  injury_watch: InjuryWatchResponse["watchlist"];
   featuredPlayers: Array<{
     player: PlayerAnalyticsResponse["player"];
     analytics: PlayerAnalyticsResponse["analytics"];
@@ -457,30 +435,11 @@ export type DashboardSummaryResponse = {
       status: string;
     };
   }>;
-  featured_players: Array<{
-    player: PlayerAnalyticsResponse["player"];
-    analytics: PlayerAnalyticsResponse["analytics"];
-    risk: {
-      score: number;
-      status: string;
-    };
-  }>;
   featuredTeams: TeamIntelligenceResponse[];
-  featured_teams: TeamIntelligenceResponse[];
   featuredManagers: ManagerProfileResponse[];
-  featured_managers: ManagerProfileResponse[];
   predictionBoard: Array<{
     matchId: string;
-    match_id: string;
     matchLabel: string;
-    match_label: string;
-    prediction: TacticalAnalysisResponse["analysis"]["prediction"];
-  }>;
-  prediction_board: Array<{
-    matchId: string;
-    match_id: string;
-    matchLabel: string;
-    match_label: string;
     prediction: TacticalAnalysisResponse["analysis"]["prediction"];
   }>;
 };
@@ -489,9 +448,7 @@ export type AIChatResponse = {
   reply: string;
   engine: string;
   contextSummary?: Record<string, unknown>;
-  context_summary?: Record<string, unknown>;
   generatedAt?: string;
-  generated_at?: string;
 };
 
 function normalizeApiError(error: unknown): Error {
@@ -590,7 +547,7 @@ export function sendAIChat(payload: {
 
 export async function getTeams(): Promise<TeamIntelligenceResponse[]> {
   const summary = await getDashboardSummary();
-  const featuredTeams = summary.featured_teams ?? summary.featuredTeams ?? [];
+  const featuredTeams = summary.featuredTeams ?? [];
   if (featuredTeams.length) {
     return featuredTeams;
   }
@@ -598,7 +555,7 @@ export async function getTeams(): Promise<TeamIntelligenceResponse[]> {
   const teamIds = new Set<string>();
   const teams: TeamIntelligenceResponse[] = [];
   for (const match of live.matches) {
-    for (const team of [match.home_team, match.away_team]) {
+    for (const team of [match.homeTeamRef, match.awayTeamRef]) {
       if (team.id && !teamIds.has(team.id)) {
         teamIds.add(team.id);
         teams.push(await getTeam(team.id));
@@ -610,7 +567,7 @@ export async function getTeams(): Promise<TeamIntelligenceResponse[]> {
 
 export async function getManagers(): Promise<ManagerProfileResponse[]> {
   const summary = await getDashboardSummary();
-  const featuredManagers = summary.featured_managers ?? summary.featuredManagers ?? [];
+  const featuredManagers = summary.featuredManagers ?? [];
   if (featuredManagers.length) {
     return featuredManagers;
   }
@@ -621,9 +578,9 @@ export async function getManagers(): Promise<ManagerProfileResponse[]> {
   return managerPayloads;
 }
 
-export async function getAIPredictions(): Promise<DashboardSummaryResponse["prediction_board"]> {
+export async function getAIPredictions(): Promise<DashboardSummaryResponse["predictionBoard"]> {
   const summary = await getDashboardSummary();
-  return summary.prediction_board ?? summary.predictionBoard ?? [];
+  return summary.predictionBoard ?? [];
 }
 
 export async function getCompetitions(): Promise<
@@ -702,11 +659,11 @@ export async function getUndiscoveredMetrics(): Promise<
       metric_category: "management",
       entity_type: "system",
       entity_id: 1,
-      metric_value: summary.system_status.length,
+      metric_value: summary.systemStatus.length,
       percentile: 82,
       season_id: 2026,
       calculation_method: "Count of active normalized providers",
-      insights: `${summary.system_status.length} providers are currently feeding the intelligence layer.`,
+      insights: `${summary.systemStatus.length} providers are currently feeding the intelligence layer.`,
       metadata: null,
       created_at: new Date().toISOString(),
     },
@@ -716,11 +673,11 @@ export async function getUndiscoveredMetrics(): Promise<
       metric_category: "performance",
       entity_type: "platform",
       entity_id: 2,
-      metric_value: (summary.prediction_board ?? []).length,
+      metric_value: (summary.predictionBoard ?? []).length,
       percentile: 78,
       season_id: 2026,
       calculation_method: "Count of tactical predictions ready for operator review",
-      insights: `${(summary.prediction_board ?? []).length} matches are currently modelled by the tactical engine.`,
+      insights: `${(summary.predictionBoard ?? []).length} matches are currently modelled by the tactical engine.`,
       metadata: null,
       created_at: new Date().toISOString(),
     },
@@ -730,11 +687,11 @@ export async function getUndiscoveredMetrics(): Promise<
       metric_category: "mental",
       entity_type: "platform",
       entity_id: 3,
-      metric_value: (summary.injury_watch ?? []).length,
+      metric_value: (summary.injuryWatch ?? []).length,
       percentile: 74,
       season_id: 2026,
       calculation_method: "Tracked players under active availability review",
-      insights: `${(summary.injury_watch ?? []).length} players are on the current injury and fatigue watchlist.`,
+      insights: `${(summary.injuryWatch ?? []).length} players are on the current injury and fatigue watchlist.`,
       metadata: null,
       created_at: new Date().toISOString(),
     },
@@ -744,11 +701,11 @@ export async function getUndiscoveredMetrics(): Promise<
       metric_category: "management",
       entity_type: "platform",
       entity_id: 4,
-      metric_value: (summary.featured_managers ?? []).length,
+      metric_value: (summary.featuredManagers ?? []).length,
       percentile: 80,
       season_id: 2026,
       calculation_method: "Managers profiled in the dashboard intelligence layer",
-      insights: `${(summary.featured_managers ?? []).length} managers currently have tactical-style summaries available.`,
+      insights: `${(summary.featuredManagers ?? []).length} managers currently have tactical-style summaries available.`,
       metadata: null,
       created_at: new Date().toISOString(),
     },

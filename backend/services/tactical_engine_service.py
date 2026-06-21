@@ -5,7 +5,7 @@ from typing import Any
 
 from backend.core.settings import settings
 
-from .api_clients import FootballDataClient, OpenLigaDBClient, TheSportsDBClient
+from .api_clients import ApiFootballClient, FootballDataClient, OpenLigaDBClient, TheSportsDBClient
 from .cache_layer import cache
 from .data_normalizer import (
     coerce_float,
@@ -28,12 +28,14 @@ class TacticalEngineService:
         football_data_client: FootballDataClient | None = None,
         sportsdb_client: TheSportsDBClient | None = None,
         openligadb_client: OpenLigaDBClient | None = None,
+        api_football_client: ApiFootballClient | None = None,
         match_history_service: MatchHistoryService | None = None,
         team_intelligence_service: TeamIntelligenceService | None = None,
     ) -> None:
         self.football_data_client = football_data_client or FootballDataClient()
         self.sportsdb_client = sportsdb_client or TheSportsDBClient()
         self.openligadb_client = openligadb_client or OpenLigaDBClient()
+        self.api_football_client = api_football_client or ApiFootballClient()
         self.match_history_service = match_history_service or MatchHistoryService()
         self.team_intelligence_service = team_intelligence_service or TeamIntelligenceService(
             football_data_client=self.football_data_client,
@@ -64,6 +66,8 @@ class TacticalEngineService:
 
     async def get_match_tactical_report(self, match_id: str) -> dict[str, Any]:
         provider, raw_id = split_entity_id(match_id)
+        if provider == "api-football":
+            return await self._build_from_api_football(raw_id)
         if provider == "football-data":
             return await self._build_from_football_data(raw_id)
         if provider == "thesportsdb":
@@ -71,6 +75,49 @@ class TacticalEngineService:
         if provider == "openligadb":
             return await self._build_from_openligadb(raw_id)
         return self._empty_report(match_id, provider, "Unsupported match provider.")
+
+    async def _build_from_api_football(self, match_id: str) -> dict[str, Any]:
+        payload, match_status = await provider_manager.safe_request(
+            "api-football",
+            lambda: self.api_football_client.get_match_details(match_id),
+            default_factory=dict,
+            expected="dict",
+            request_key=f"match:api-football:{match_id}"
+        )
+        payload = ensure_dict(payload)
+        fixture = ensure_dict(payload.get("fixture"))
+        teams = ensure_dict(fixture.get("teams"))
+        home_team_id = ensure_str(ensure_dict(teams.get("home")).get("id"))
+        away_team_id = ensure_str(ensure_dict(teams.get("away")).get("id"))
+        
+        home_history = await self.match_history_service.get_team_history(f"api-football__{home_team_id}") if home_team_id else {"data": {}}
+        away_history = await self.match_history_service.get_team_history(f"api-football__{away_team_id}") if away_team_id else {"data": {}}
+
+        normalized_match = self.api_football_client._normalize_fixture(fixture)
+
+        return self._assemble_report(
+            normalized_match=normalized_match,
+            home_history=ensure_dict(home_history.get("data")),
+            away_history=ensure_dict(away_history.get("data")),
+            home_team_details={}, # Expansion: fetch full team details if needed
+            away_team_details={},
+            timeline=self._build_api_football_timeline(payload),
+            provider_status=[match_status.as_dict()]
+            + ensure_list(home_history.get("data", {}).get("providerStatus"))
+            + ensure_list(away_history.get("data", {}).get("providerStatus")),
+        )
+
+    def _build_api_football_timeline(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        timeline: list[dict[str, Any]] = []
+        for event in ensure_list(payload.get("events")):
+            evt = ensure_dict(event)
+            timeline.append({
+                "minute": coerce_int(ensure_dict(evt.get("time")).get("elapsed")),
+                "type": ensure_str(evt.get("type")).upper(),
+                "team": ensure_str(ensure_dict(evt.get("team")).get("name")),
+                "description": f"{evt.get('type')}: {ensure_dict(evt.get('player')).get('name')}"
+            })
+        return sorted(timeline, key=lambda x: x.get("minute", 0))
 
     async def _build_from_football_data(self, match_id: str) -> dict[str, Any]:
         match_payload, match_status = await provider_manager.safe_request(
@@ -324,6 +371,9 @@ class TacticalEngineService:
         form_index = coerce_float(trends.get("formIndex"), 0.0)
         goals_for = coerce_float(stats.get("goalsFor"), coerce_float(trends.get("goalsFor"), 0.0))
         goals_against = coerce_float(stats.get("goalsAgainst"), coerce_float(trends.get("goalsAgainst"), 0.0))
+        
+        pressing_intensity = round(min(9.5, max(3.0, (attack_strength * 2.5) + (possession * 0.05))), 1)
+        
         projected_shots = round(max(4.0, attack_strength * 5.1), 2)
         projected_conversion = round((goals_for / max(projected_shots * 5, 1)), 2)
         formation = self._infer_formation(possession, attack_strength, defense_strength)
@@ -334,6 +384,7 @@ class TacticalEngineService:
             "teamName": team_name,
             "team_name": team_name,
             "formation": formation,
+            "pressing_intensity": pressing_intensity,
             "strengths": strengths,
             "weaknesses": weaknesses,
             "metrics": {
@@ -349,6 +400,8 @@ class TacticalEngineService:
                 "projected_shots": projected_shots,
                 "shotConversion": projected_conversion,
                 "shot_conversion": projected_conversion,
+                "pressingIntensity": pressing_intensity,
+                "pressing_intensity": pressing_intensity,
             },
             "momentum": momentum,
         }
@@ -548,7 +601,16 @@ class TacticalEngineService:
             "stale": False,
         }
         return {
-            "match": {"id": match_id, "homeTeam": "Home", "awayTeam": "Away", "status": "UNKNOWN", "kickoff": None, "score": {"home": 0, "away": 0}, "venue": None, "source": provider},
+            "match": {
+                "id": match_id,
+                "home_team": {"name": "Home"},
+                "away_team": {"name": "Away"},
+                "status": "UNKNOWN",
+                "kickoff": None,
+                "score": {"home": 0, "away": 0},
+                "venue": None,
+                "source": provider
+            },
             "team_analysis": {"teamName": "Home", "formation": "4-4-2", "strengths": [], "weaknesses": [], "metrics": {}, "momentum": 0},
             "opponent_analysis": {"teamName": "Away", "formation": "4-4-2", "strengths": [], "weaknesses": [], "metrics": {}, "momentum": 0},
             "prediction": "Tactical data is not available for this match yet.",

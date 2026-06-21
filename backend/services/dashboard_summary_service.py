@@ -15,6 +15,9 @@ from .tactical_engine_service import TacticalEngineService
 from .team_intelligence_service import TeamIntelligenceService
 
 
+from .intelligence_engine import intelligence_engine
+
+
 class DashboardSummaryService:
     def __init__(
         self,
@@ -45,6 +48,11 @@ class DashboardSummaryService:
         matches = live_data.get("matches", [])
         featured_match = matches[0] if matches else None
 
+        # Enrich featured match with dynamic intelligence
+        intelligence_data = None
+        if featured_match:
+            intelligence_data = await intelligence_engine.analyze_match_dynamic(featured_match["id"], featured_match)
+
         tactical_task = self.tactical_engine_service.get_tactical_analysis(featured_match["id"]) if featured_match else None
         injury_task = self.injury_analysis_service.get_injury_watch(match_id=featured_match["id"] if featured_match else None)
         prediction_tasks = [self.tactical_engine_service.get_tactical_analysis(match["id"]) for match in matches[:4]]
@@ -55,6 +63,10 @@ class DashboardSummaryService:
             asyncio.gather(*prediction_tasks) if prediction_tasks else self._empty_async([]),
         )
 
+        # Merge intelligence insights into tactical spotlight
+        if tactical_spotlight and tactical_spotlight.get("data") and intelligence_data:
+            tactical_spotlight["data"]["intelligence"] = intelligence_data
+
         featured_players = await self._build_featured_players(injury_watch["data"]["watchlist"])
         featured_teams = await self._build_featured_teams(matches)
         featured_managers = await self._build_featured_managers(featured_teams)
@@ -64,9 +76,7 @@ class DashboardSummaryService:
             prediction_board.append(
                 {
                     "matchId": match["id"],
-                    "match_id": match["id"],
                     "matchLabel": f"{match['homeTeam']} vs {match['awayTeam']}",
-                    "match_label": f"{match['homeTeam']} vs {match['awayTeam']}",
                     "prediction": tactical["data"]["analysis"]["prediction"],
                 }
             )
@@ -78,30 +88,16 @@ class DashboardSummaryService:
                 {"label": "Injury alerts", "value": injury_watch["data"]["summary"]["highRisk"], "tone": "warning"},
                 {"label": "Predictions ready", "value": len(prediction_board), "tone": "default"},
             ],
-            "overview_cards": [
-                {"label": "Tracked matches", "value": live_data["summary"]["totalMatches"], "tone": "default"},
-                {"label": "Live now", "value": live_data["summary"]["liveMatches"], "tone": "highlight"},
-                {"label": "Injury alerts", "value": injury_watch["data"]["summary"]["highRisk"], "tone": "warning"},
-                {"label": "Predictions ready", "value": len(prediction_board), "tone": "default"},
-            ],
             "systemStatus": live_data.get("providerStatus", []),
-            "system_status": live_data.get("providerStatus", []),
             "liveBoard": matches[:8],
-            "live_board": matches[:8],
             "featuredMatch": featured_match,
-            "featured_match": featured_match,
+            "intelligence": intelligence_data,
             "tacticalSpotlight": tactical_spotlight["data"] if tactical_spotlight and tactical_spotlight.get("data") else None,
-            "tactical_spotlight": tactical_spotlight["data"] if tactical_spotlight and tactical_spotlight.get("data") else None,
             "injuryWatch": injury_watch["data"]["watchlist"][:6],
-            "injury_watch": injury_watch["data"]["watchlist"][:6],
             "featuredPlayers": featured_players,
-            "featured_players": featured_players,
             "featuredTeams": featured_teams,
-            "featured_teams": featured_teams,
             "featuredManagers": featured_managers,
-            "featured_managers": featured_managers,
             "predictionBoard": prediction_board,
-            "prediction_board": prediction_board,
         }
 
         generated_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -109,9 +105,7 @@ class DashboardSummaryService:
             "data": payload,
             "meta": {
                 "generatedAt": generated_at,
-                "generated_at": generated_at,
                 "schemaVersion": settings.api_schema_version,
-                "schema_version": settings.api_schema_version,
                 "stale": False,
             },
         }

@@ -6,24 +6,18 @@ from typing import Any
 
 from backend.core.settings import settings
 
-from .api_clients import FootballDataClient, OpenLigaDBClient, TheSportsDBClient, normalize_name
+from .provider_service import provider_service
 from .cache_layer import cache
-from .data_normalizer import ensure_dict, ensure_list
+from .data_normalizer import ensure_dict, ensure_list, normalize_name
 from .provider_manager import ProviderStatus, provider_manager
+from .match_priority_service import match_priority_service
 
 
 class LiveDataService:
-    provider_priority = ("football-data", "thesportsdb", "openligadb")
+    provider_priority = ("api-football", "football-data", "thesportsdb", "openligadb")
 
-    def __init__(
-        self,
-        football_data_client: FootballDataClient | None = None,
-        sportsdb_client: TheSportsDBClient | None = None,
-        openligadb_client: OpenLigaDBClient | None = None,
-    ) -> None:
-        self.football_data_client = football_data_client or FootballDataClient()
-        self.sportsdb_client = sportsdb_client or TheSportsDBClient()
-        self.openligadb_client = openligadb_client or OpenLigaDBClient()
+    def __init__(self) -> None:
+        pass
 
     async def get_live_matches(self) -> dict[str, Any]:
         cache_key = "platform:live-matches"
@@ -31,17 +25,8 @@ class LiveDataService:
         if cached_payload is not None:
             return cached_payload
 
-        provider_results = await asyncio.gather(
-            provider_manager.safe_request("football-data", self.football_data_client.get_matches, default_factory=list, expected="list", request_key="live:football-data"),
-            provider_manager.safe_request("thesportsdb", self.sportsdb_client.get_live_matches, default_factory=list, expected="list", request_key="live:thesportsdb"),
-            provider_manager.safe_request("openligadb", self.openligadb_client.get_current_matches, default_factory=list, expected="list", request_key="live:openligadb"),
-        )
-
-        all_matches: list[dict[str, Any]] = []
-        provider_status: list[dict[str, Any]] = []
-        for payload, status in provider_results:
-            provider_status.append(status.as_dict())
-            all_matches.extend([ensure_dict(match) for match in ensure_list(payload)])
+        all_matches, statuses = await provider_service.get_live_matches_tiered()
+        provider_status = [status.as_dict() for status in statuses]
 
         if not all_matches:
             stale_payload = await cache.get(cache_key, allow_stale=True)
@@ -53,31 +38,76 @@ class LiveDataService:
                 return stale_payload
 
         merged_matches = self._merge_matches(all_matches)
+        filtered_matches = self._filter_and_prioritize_matches(merged_matches)
+        sorted_matches = match_priority_service.sort_matches(filtered_matches)
+        
         payload = {
-            "matches": merged_matches,
+            "matches": sorted_matches,
             "summary": {
-                "totalMatches": len(merged_matches),
-                "total_matches": len(merged_matches),
-                "liveMatches": sum(1 for match in merged_matches if self._is_live_status(match.get("status"))),
-                "live_matches": sum(1 for match in merged_matches if self._is_live_status(match.get("status"))),
-                "trackedCompetitions": len({ensure_dict(match.get("competition")).get("name") for match in merged_matches if ensure_dict(match.get("competition")).get("name")}),
-                "tracked_competitions": len({ensure_dict(match.get("competition")).get("name") for match in merged_matches if ensure_dict(match.get("competition")).get("name")}),
+                "totalMatches": len(sorted_matches),
+                "liveMatches": sum(1 for match in sorted_matches if self._is_live_status(match.get("status"))),
+                "trackedCompetitions": len({ensure_dict(match.get("competition")).get("name") for match in sorted_matches if ensure_dict(match.get("competition")).get("name")}),
             },
             "providerStatus": provider_status,
-            "provider_status": provider_status,
         }
         wrapped = {
             "data": payload,
             "meta": {
                 "generatedAt": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-                "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
                 "schemaVersion": settings.api_schema_version,
-                "schema_version": settings.api_schema_version,
                 "stale": False,
             },
         }
         await cache.set(cache_key, wrapped, ttl=settings.live_cache_ttl_seconds)
         return wrapped
+
+    def _filter_and_prioritize_matches(self, matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        now = datetime.now(UTC)
+        
+        live_matches: list[dict[str, Any]] = []
+        upcoming_matches: list[dict[str, Any]] = []
+        recent_matches: list[dict[str, Any]] = []
+        
+        for match in matches:
+            status = str(match.get("status") or "").upper()
+            kickoff_str = match.get("kickoff") or match.get("scheduledAt") or match.get("scheduled_at")
+            
+            try:
+                kickoff = datetime.fromisoformat(str(kickoff_str).replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                continue
+
+            # 1. LIVE matches
+            if self._is_live_status(status):
+                live_matches.append(match)
+                continue
+                
+            # 2. Upcoming matches (next 72 hours)
+            if kickoff > now:
+                if (kickoff - now).total_seconds() <= 72 * 3600:
+                    upcoming_matches.append(match)
+                continue
+                
+            # 3. Recently completed matches (last 48 hours)
+            if status == "FINISHED" or kickoff <= now:
+                if (now - kickoff).total_seconds() <= 48 * 3600:
+                    recent_matches.append(match)
+
+        # Priority return
+        if live_matches:
+            return live_matches
+            
+        if upcoming_matches:
+            # Sort upcoming by kickoff time (soonest first)
+            upcoming_matches.sort(key=lambda x: x.get("kickoff", ""))
+            return upcoming_matches[:12] # Limit to 12 matches if no live
+            
+        if recent_matches:
+            # Sort recent by kickoff time (most recent first)
+            recent_matches.sort(key=lambda x: x.get("kickoff", ""), reverse=True)
+            return recent_matches[:8] # Limit to 8 recent matches
+            
+        return []
 
     def _merge_matches(self, matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
         merged: dict[str, dict[str, Any]] = {}
@@ -89,36 +119,29 @@ class LiveDataService:
                     **match,
                     "providers": list(match.get("providers", [])),
                     "externalIds": dict(match.get("externalIds", {})),
-                    "external_ids": dict(match.get("external_ids", {})),
                     "homeTeamRef": {
                         **ensure_dict(match.get("homeTeamRef")),
-                        "providerIds": dict(ensure_dict(ensure_dict(match.get("homeTeamRef")).get("providerIds")) or ensure_dict(ensure_dict(match.get("homeTeamRef")).get("provider_ids"))),
-                        "provider_ids": dict(ensure_dict(ensure_dict(match.get("homeTeamRef")).get("provider_ids")) or ensure_dict(ensure_dict(match.get("homeTeamRef")).get("providerIds"))),
+                        "providerIds": dict(ensure_dict(ensure_dict(match.get("homeTeamRef")).get("providerIds"))),
                     },
                     "awayTeamRef": {
                         **ensure_dict(match.get("awayTeamRef")),
-                        "providerIds": dict(ensure_dict(ensure_dict(match.get("awayTeamRef")).get("providerIds")) or ensure_dict(ensure_dict(match.get("awayTeamRef")).get("provider_ids"))),
-                        "provider_ids": dict(ensure_dict(ensure_dict(match.get("awayTeamRef")).get("provider_ids")) or ensure_dict(ensure_dict(match.get("awayTeamRef")).get("providerIds"))),
+                        "providerIds": dict(ensure_dict(ensure_dict(match.get("awayTeamRef")).get("providerIds"))),
                     },
                 }
-                merged[key]["home_team"] = merged[key]["homeTeamRef"]
-                merged[key]["away_team"] = merged[key]["awayTeamRef"]
                 continue
 
             existing["providers"] = sorted(set(existing.get("providers", [])) | set(match.get("providers", [])))
-            existing_external_ids = ensure_dict(existing.get("externalIds")) or ensure_dict(existing.get("external_ids"))
-            existing_external_ids.update(ensure_dict(match.get("externalIds")) or ensure_dict(match.get("external_ids")))
+            existing_external_ids = ensure_dict(existing.get("externalIds"))
+            existing_external_ids.update(ensure_dict(match.get("externalIds")))
             existing["externalIds"] = existing_external_ids
-            existing["external_ids"] = existing_external_ids
 
             for team_key in ("homeTeamRef", "awayTeamRef"):
                 existing_team = ensure_dict(existing.get(team_key))
                 candidate_team = ensure_dict(match.get(team_key))
-                provider_ids = ensure_dict(existing_team.get("providerIds")) or ensure_dict(existing_team.get("provider_ids"))
-                provider_ids.update(ensure_dict(candidate_team.get("providerIds")) or ensure_dict(candidate_team.get("provider_ids")))
+                provider_ids = ensure_dict(existing_team.get("providerIds"))
+                provider_ids.update(ensure_dict(candidate_team.get("providerIds")))
                 existing_team.update({key: value for key, value in candidate_team.items() if value not in (None, "")})
                 existing_team["providerIds"] = provider_ids
-                existing_team["provider_ids"] = provider_ids
                 existing[team_key] = existing_team
 
             existing["competition"] = self._choose_better_dict(existing.get("competition"), match.get("competition"))
@@ -132,24 +155,21 @@ class LiveDataService:
             }
             existing["kickoff"] = existing.get("kickoff") or match.get("kickoff")
             existing["scheduledAt"] = existing.get("scheduledAt") or match.get("scheduledAt")
-            existing["scheduled_at"] = existing.get("scheduled_at") or match.get("scheduled_at")
             existing["venue"] = existing.get("venue") or match.get("venue")
 
             preferred_id = self._preferred_provider_id(existing_external_ids)
             existing["id"] = preferred_id
             existing["source"] = preferred_id.split("__", 1)[0]
             existing["homeTeamRef"]["id"] = self._preferred_provider_id(
-                ensure_dict(existing["homeTeamRef"].get("providerIds")) or ensure_dict(existing["homeTeamRef"].get("provider_ids"))
+                ensure_dict(existing["homeTeamRef"].get("providerIds"))
             )
             existing["awayTeamRef"]["id"] = self._preferred_provider_id(
-                ensure_dict(existing["awayTeamRef"].get("providerIds")) or ensure_dict(existing["awayTeamRef"].get("provider_ids"))
+                ensure_dict(existing["awayTeamRef"].get("providerIds"))
             )
-            existing["home_team"] = existing["homeTeamRef"]
-            existing["away_team"] = existing["awayTeamRef"]
             existing["homeTeam"] = existing["homeTeamRef"].get("name")
             existing["awayTeam"] = existing["awayTeamRef"].get("name")
 
-        return sorted(merged.values(), key=self._sort_key)
+        return list(merged.values())
 
     def _build_match_key(self, match: dict[str, Any]) -> str:
         kickoff = match.get("kickoff") or match.get("scheduledAt") or match.get("scheduled_at") or ""
@@ -185,8 +205,3 @@ class LiveDataService:
 
     def _is_live_status(self, status: Any) -> bool:
         return str(status or "").upper() in {"LIVE", "IN_PLAY", "PAUSED", "HALF_TIME"}
-
-    def _sort_key(self, match: dict[str, Any]) -> tuple[int, str]:
-        status = str(match.get("status") or "")
-        status_bucket = 0 if self._is_live_status(status) else 1 if status in {"TIMED", "SCHEDULED"} else 2
-        return (status_bucket, str(match.get("kickoff") or ""))

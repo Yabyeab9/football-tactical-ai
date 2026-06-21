@@ -297,6 +297,97 @@ class FootballDataClient(BaseApiClient):
         )
 
 
+class ApiFootballClient(BaseApiClient):
+    provider_name = "api-football"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.base_url = settings.api_football_base_url
+        self.api_key = ensure_str(settings.rapidapi_key)
+        self.host = ensure_str(settings.api_football_host)
+
+    @property
+    def headers(self) -> dict[str, str]:
+        if not self.api_key:
+            raise ProviderConfigurationError("RAPIDAPI_KEY is not configured")
+        return {
+            "x-rapidapi-key": self.api_key,
+            "x-rapidapi-host": self.host
+        }
+
+    async def get_live_matches(self) -> list[dict[str, Any]]:
+        payload = ensure_dict(await self._get_json("fixtures", params={"live": "all"}, headers=self.headers))
+        fixtures = ensure_list(payload.get("response"))
+        return [self._normalize_fixture(fixture) for fixture in fixtures if isinstance(fixture, dict)]
+
+    async def get_match_details(self, match_id: str) -> dict[str, Any]:
+        payload = ensure_dict(await self._get_json("fixtures", params={"id": match_id}, headers=self.headers))
+        response = ensure_list(payload.get("response"))
+        if not response:
+            return {}
+        fixture = ensure_dict(response[0])
+        # api-football includes almost everything in one call if requested, 
+        # but stats/lineups are usually separate endpoints or sub-fields
+        stats_payload = await self._get_optional_json("fixtures/statistics", params={"fixture": match_id}, headers=self.headers, fallback={})
+        lineups_payload = await self._get_optional_json("fixtures/lineups", params={"fixture": match_id}, headers=self.headers, fallback={})
+        
+        return {
+            "fixture": fixture,
+            "statistics": ensure_list(ensure_dict(stats_payload).get("response")),
+            "lineups": ensure_list(ensure_dict(lineups_payload).get("response")),
+            "events": ensure_list(fixture.get("events"))
+        }
+
+    async def get_team_history(self, team_id: str, last: int = 10) -> list[dict[str, Any]]:
+        payload = ensure_dict(await self._get_json("fixtures", params={"team": team_id, "last": last}, headers=self.headers))
+        fixtures = ensure_list(payload.get("response"))
+        return [self._normalize_fixture(fixture) for fixture in fixtures if isinstance(fixture, dict)]
+
+    def _normalize_fixture(self, fixture: dict[str, Any]) -> dict[str, Any]:
+        fixture = ensure_dict(fixture)
+        fixture_info = ensure_dict(fixture.get("fixture"))
+        league = ensure_dict(fixture.get("league"))
+        teams = ensure_dict(fixture.get("teams"))
+        home = ensure_dict(teams.get("home"))
+        away = ensure_dict(teams.get("away"))
+        goals = ensure_dict(fixture.get("goals"))
+        
+        return normalize_match_record(
+            provider=self.provider_name,
+            raw_id=fixture_info.get("id"),
+            home_team=normalize_team_ref(
+                provider=self.provider_name,
+                raw_id=home.get("id"),
+                name=home.get("name"),
+                short_name=home.get("name"),
+                crest=home.get("logo"),
+                provider_ids={self.provider_name: home.get("id")},
+            ),
+            away_team=normalize_team_ref(
+                provider=self.provider_name,
+                raw_id=away.get("id"),
+                name=away.get("name"),
+                short_name=away.get("name"),
+                crest=away.get("logo"),
+                provider_ids={self.provider_name: away.get("id")},
+            ),
+            status=fixture_info.get("status", {}).get("short", "NS"),
+            kickoff=fixture_info.get("date"),
+            score_home=goals.get("home"),
+            score_away=goals.get("away"),
+            venue=fixture_info.get("venue", {}).get("name"),
+            competition={
+                "id": build_entity_id(self.provider_name, league.get("id")),
+                "name": league.get("name"),
+                "country": league.get("country"),
+                "logo": league.get("logo"),
+            },
+            minute=fixture_info.get("status", {}).get("elapsed"),
+            external_ids={self.provider_name: fixture_info.get("id")},
+            providers=[self.provider_name],
+        )
+
+
 class OpenLigaDBClient(BaseApiClient):
     provider_name = "openligadb"
 
@@ -387,6 +478,7 @@ async def measure_provider_call(
 
 
 __all__ = [
+    "ApiFootballClient",
     "BaseApiClient",
     "FootballDataClient",
     "OpenLigaDBClient",

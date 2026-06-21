@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # Cache TTLs (Seconds)
     analytics_cache_ttl_seconds: int = Field(240, env="ANALYTICS_CACHE_TTL_SECONDS")
     dashboard_cache_ttl_seconds: int = Field(300, env="DASHBOARD_CACHE_TTL_SECONDS")
-    live_cache_ttl_seconds: int = Field(60, env="LIVE_CACHE_TTL_SECONDS")
+    live_cache_ttl_seconds: int = Field(120, env="LIVE_CACHE_TTL_SECONDS")
     match_cache_ttl_seconds: int = Field(120, env="MATCH_CACHE_TTL_SECONDS")
     team_cache_ttl_seconds: int = Field(120, env="TEAM_CACHE_TTL_SECONDS")
     player_cache_ttl_seconds: int = Field(120, env="PLAYER_CACHE_TTL_SECONDS")
@@ -59,11 +59,15 @@ class Settings(BaseSettings):
     provider_retry_attempts: int = Field(2, env="PROVIDER_RETRY_ATTEMPTS")
     
     sportsdb_base_url: str = Field("https://www.thesportsdb.com/api/v1/json", env="SPORTSDB_BASE_URL")
-    thesportsdb_api_key: str = Field("", env="SPORTSDB_KEY")
+    thesportsdb_api_key: str = Field("123", env="SPORTSDB_KEY")
     
     football_data_base_url: str = Field("https://api.football-data.org/v4", env="FOOTBALL_DATA_BASE_URL")
     football_data_token: str = Field("", env="FOOTBALL_DATA_TOKEN")
     
+    rapidapi_key: str = Field("8719d06bd3mshb05d5e399b7ab65p1bf45fjsn1108c6cb0bb", env="RAPIDAPI_KEY")
+    api_football_host: str = Field("api-football-v1.p.rapidapi.com", env="API_FOOTBALL_HOST")
+    api_football_base_url: str = Field("https://api-football-v1.p.rapidapi.com/v3", env="API_FOOTBALL_BASE_URL")
+
     openligadb_base_url: str = Field("https://api.openligadb.de", env="OPENLIGADB_BASE_URL")
     openligadb_leagues: List[str] = Field(default_factory=lambda: ["bl1", "bl2"], env="OPENLIGADB_LEAGUES")
     

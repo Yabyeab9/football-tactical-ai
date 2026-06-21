@@ -39,6 +39,7 @@ class ProviderManager:
     Orchestrates multiple data providers with:
     - Exponential backoff retries
     - Cooldown management for 429/Rate limits
+    - Request throttling to prevent 429s
     - Request deduplication for in-flight calls
     - Graceful fallbacks
     """
@@ -48,10 +49,40 @@ class ProviderManager:
         self._cooldowns: Dict[str, float] = {}
         self._inflight: Dict[str, asyncio.Future] = {}
         self._lock = asyncio.Lock()
+        self._request_history: Dict[str, List[float]] = {}
+        # Max requests per minute per provider (Conservative defaults)
+        self._rate_limits = {
+            "api-football": 10,
+            "football-data": 10,
+            "thesportsdb": 20,
+            "openligadb": 30
+        }
 
     def is_cooling_down(self, provider: str) -> bool:
         cooldown_until = self._cooldowns.get(provider, 0)
-        return time.time() < cooldown_until
+        if time.time() < cooldown_until:
+            return True
+        return False
+
+    def _check_rate_limit(self, provider: str) -> bool:
+        """
+        Simple sliding window rate limiter.
+        Returns True if request should be allowed, False if throttled.
+        """
+        now = time.time()
+        limit = self._rate_limits.get(provider, 10)
+        
+        if provider not in self._request_history:
+            self._request_history[provider] = []
+            
+        # Clean up old requests (> 60s)
+        self._request_history[provider] = [t for t in self._request_history[provider] if now - t < 60]
+        
+        if len(self._request_history[provider]) >= limit:
+            return False
+            
+        self._request_history[provider].append(now)
+        return True
 
     async def safe_request(
         self,
@@ -67,17 +98,27 @@ class ProviderManager:
         """
         default_factory = default_factory or (lambda: {} if expected == "dict" else [] if expected == "list" else None)
         
-        # Check cooldown
+        # 1. Check cooldown
         if self.is_cooling_down(provider):
             logger.warning("Provider %s is cooling down. Skipping request.", provider)
             return default_factory(), ProviderStatus(
                 provider=provider,
                 success=False,
-                error="Provider cooling down due to rate limits",
+                error="Provider cooling down due to previous rate limits",
                 stale=True
             )
 
-        # Deduplication
+        # 2. Check internal rate limit (throttling)
+        if not self._check_rate_limit(provider):
+            logger.warning("Provider %s throttled internally to prevent 429.", provider)
+            return default_factory(), ProviderStatus(
+                provider=provider,
+                success=False,
+                error="Internal rate limit reached",
+                stale=True
+            )
+
+        # 3. Deduplication
         if request_key:
             async with self._lock:
                 if request_key in self._inflight:
@@ -136,9 +177,9 @@ class ProviderManager:
                 last_error = str(exc)
                 if exc.response.status_code == 429:
                     rate_limited = True
-                    # Set cooldown for 60 seconds on 429
-                    self._cooldowns[provider] = time.time() + 60
-                    logger.error("Provider %s hit rate limit (429). Cooling down.", provider)
+                    # Set cooldown for 300 seconds on 429
+                    self._cooldowns[provider] = time.time() + 300
+                    logger.error("Provider %s hit rate limit (429). Cooling down for 5m.", provider)
                     break # Don't retry 429 immediately
                 
                 if attempt == self.retry_attempts:

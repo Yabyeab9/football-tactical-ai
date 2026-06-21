@@ -32,70 +32,54 @@ export default function InjuryAnalysis() {
           </Card>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-3">
-          {loading ? (
-            Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-36 rounded-[1.75rem]" />)
-          ) : (
-            <>
-              <MetricCard label="High Risk" value={data?.summary.high_risk ?? 0} hint="Players needing immediate workload review" icon={AlertTriangle} />
-              <MetricCard label="Monitor" value={data?.summary.monitor ?? 0} hint="Players in managed workload territory" icon={Clock3} />
-              <MetricCard label="Available" value={data?.summary.available ?? 0} hint="Players without major load flags" icon={ShieldAlert} />
-            </>
-          )}
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
+           <MetricCard label="High Risk" value={data?.summary.highRisk ?? 0} icon={AlertTriangle} tone="warning" />
+           <MetricCard label="Monitor" value={data?.summary.monitor ?? 0} icon={Clock3} tone="highlight" />
+           <MetricCard label="Available" value={data?.summary.available ?? 0} icon={ShieldAlert} />
         </div>
 
-        <Card className="border-border/60">
-          <CardHeader className="gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <CardTitle className="text-xl">Provider Coverage</CardTitle>
-            {loading ? <Skeleton className="h-10 w-64 rounded-2xl" /> : <ProviderStatusStrip statuses={data?.provider_status ?? []} />}
-          </CardHeader>
-        </Card>
-
-        <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle className="text-xl">Risk Watchlist</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {loading
-              ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-[1.5rem]" />)
-              : data?.watchlist.map((player) => (
-                  <div key={player.player_id} className="rounded-[1.5rem] border border-border/60 p-5">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                      <div>
-                        <div className="text-xl font-semibold">{player.player_name}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {player.team.name} • {player.position}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {loading
+            ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-48 rounded-[1.75rem]" />)
+            : data?.watchlist.map((player) => (
+                  <Card key={player.playerId} className="rounded-[2rem] border-white/5 bg-[#0A0C10] overflow-hidden group hover:border-primary/30 transition-all">
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between mb-4">
+                        <div>
+                          <div className="text-lg font-black text-white">{player.playerName}</div>
+                          <div className="text-[10px] font-medium text-white/40 uppercase tracking-widest">
+                            {player.team.name} • {player.position}
+                          </div>
                         </div>
-                      </div>
-                      <Badge variant={player.status === "HIGH_RISK" ? "destructive" : player.status === "MONITOR" ? "secondary" : "outline"}>
-                        {player.status} • {player.risk_score}
-                      </Badge>
-                    </div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-3">
-                      <div className="rounded-2xl bg-muted/30 px-4 py-3 text-sm">
-                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Average minutes</div>
-                        <div className="mt-1 font-semibold">{player.average_minutes}</div>
-                      </div>
-                      <div className="rounded-2xl bg-muted/30 px-4 py-3 text-sm">
-                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Starts recent</div>
-                        <div className="mt-1 font-semibold">{player.starts_recent}</div>
-                      </div>
-                      <div className="rounded-2xl bg-muted/30 px-4 py-3 text-sm">
-                        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Minutes recent</div>
-                        <div className="mt-1 font-semibold">{player.minutes_played_recent}</div>
-                      </div>
-                    </div>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {player.reasons.map((reason) => (
-                        <Badge key={reason} variant="outline" className="whitespace-normal text-left">
-                          {reason}
+                        <Badge className={player.status === "HIGH_RISK" ? "bg-red-500/10 text-red-500 border-red-500/20" : player.status === "MONITOR" ? "bg-amber-500/10 text-amber-500 border-amber-500/20" : "bg-emerald-500/10 text-emerald-500 border-emerald-500/20"}>
+                          {player.riskScore}
                         </Badge>
-                      ))}
-                    </div>
-                  </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 mb-4">
+                        {[
+                          { label: 'AVG MIN', val: player.averageMinutes },
+                          { label: 'STARTS', val: player.startsRecent },
+                          { label: 'REC MIN', val: player.minutesPlayedRecent }
+                        ].map(stat => (
+                          <div key={stat.label} className="bg-white/5 rounded-xl p-2 text-center">
+                            <div className="text-[8px] font-black text-white/20 uppercase tracking-widest">{stat.label}</div>
+                            <div className="text-xs font-bold text-white">{stat.val}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-wrap gap-1">
+                        {player.reasons.slice(0, 2).map((reason) => (
+                          <span key={reason} className="text-[9px] font-bold text-white/30 bg-white/5 border border-white/10 px-2 py-0.5 rounded-full">
+                            {reason}
+                          </span>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
                 ))}
-          </CardContent>
-        </Card>
+        </div>
       </div>
     </MainLayout>
   );

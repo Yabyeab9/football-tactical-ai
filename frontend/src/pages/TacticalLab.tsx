@@ -6,11 +6,12 @@ import { PageHero } from "@/components/platform/PageHero";
 import { ProviderStatusStrip } from "@/components/platform/ProviderStatusStrip";
 import { TacticalPitch, PitchNode, PitchEdge } from "@/components/platform/TacticalPitch";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { getLiveMatches, getTacticalAnalysis, type TacticalAnalysisResponse } from "@/db/api";
+import { getLiveMatches, getTacticalAnalysis, api, type TacticalAnalysisResponse } from "@/db/api";
 import { usePollingResource } from "@/hooks/use-polling-resource";
 
 export default function TacticalLab() {
@@ -38,11 +39,17 @@ export default function TacticalLab() {
       try {
         const result = await getTacticalAnalysis(selectedMatchId);
         // Also fetch pass network for home team as default
-        const passResp = await api.get(`/api/analytics/pass-networks?match_id=${selectedMatchId}&team_id=${result.match.home_team.id}`);
+        const homeTeamId = result.match.homeTeamRef.id;
+        let passNetworkData = { nodes: [], edges: [] };
+        
+        if (homeTeamId) {
+           const passResp = await api.get(`/api/analytics/pass-networks?match_id=${selectedMatchId}&team_id=${homeTeamId}`);
+           passNetworkData = passResp.data.data;
+        }
         
         if (active) {
           setAnalysis(result);
-          setPassNetwork(passResp.data.data);
+          setPassNetwork(passNetworkData);
         }
       } catch (err) {
         console.error("Failed to load tactical data", err);
@@ -57,11 +64,11 @@ export default function TacticalLab() {
 
   return (
     <MainLayout>
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
         <PageHero
           eyebrow="Tactical Command Center"
-          title="Broadcast-quality tactical inference and network analysis."
-          description="Direct remote data feed. No static datasets. Pure intelligence."
+          title="Broadcast-quality tactical inference."
+          description="Direct remote data feed. Pure intelligence."
           badge="Live Engine"
         />
 
@@ -80,7 +87,7 @@ export default function TacticalLab() {
                       <SelectContent className="bg-slate-900 border-white/10 text-white">
                         {liveData?.matches.map((m) => (
                           <SelectItem key={m.id} value={m.id}>
-                            {m.home_team.name} vs {m.away_team.name}
+                            {m.homeTeam} vs {m.awayTeam}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -134,7 +141,7 @@ export default function TacticalLab() {
                             <div className="text-right">
                               <div className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Centrality Apex</div>
                               <div className="text-lg font-black text-primary">
-                                {passNetwork?.nodes.sort((a,b) => b.passes_completed - a.passes_completed)[0]?.name || "N/A"}
+                                {passNetwork?.nodes.sort((a,b) => b.passesCompleted - a.passesCompleted)[0]?.name || "N/A"}
                               </div>
                             </div>
                           </div>
@@ -143,20 +150,20 @@ export default function TacticalLab() {
                         {passNetwork?.edges.map((edge, idx) => (
                           <PitchEdge 
                             key={idx} 
-                            x1={edge.source_x || 50} 
-                            y1={edge.source_y || 50} 
-                            x2={edge.target_x || 50} 
-                            y2={edge.target_y || 50} 
+                            x1={edge.sourceX || 50} 
+                            y1={edge.sourceY || 50} 
+                            x2={edge.targetX || 50} 
+                            y2={edge.targetY || 50} 
                             weight={Math.max(1, edge.weight / 2)}
                           />
                         ))}
                         {passNetwork?.nodes.map((node) => (
                           <PitchNode 
-                            key={node.player_id} 
+                            key={node.playerId} 
                             x={node.x || 50} 
                             y={node.y || 50} 
                             label={node.name.split(' ').pop()} 
-                            size={Math.max(8, node.passes_completed / 2)}
+                            size={Math.max(8, node.passesCompleted / 2)}
                           />
                         ))}
                       </TacticalPitch>

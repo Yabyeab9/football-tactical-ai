@@ -14,15 +14,15 @@ export default function AIPredictions() {
     intervalMs: 45000,
   });
 
-  const predictions = data?.prediction_board ?? [];
+  const predictions = data?.predictionBoard ?? [];
 
   return (
     <MainLayout>
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
         <PageHero
           eyebrow="Predictions Hub"
           title="Outcome framing and tactical scenario tracking."
-          description="This module surfaces the prediction layer of the platform: match-level probabilities, the tactical reason behind them, and the decision board we can act on across the rest of the system."
+          description="Surface the prediction layer: match-level probabilities and the tactical reason behind them."
           badge="Decision support"
         />
 
@@ -32,61 +32,61 @@ export default function AIPredictions() {
           </Card>
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 grid-cols-2 md:grid-cols-4 lg:grid-cols-6">
           {loading ? (
-            Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-36 rounded-[1.75rem]" />)
+            Array.from({ length: 3 }).map((_, index) => <Skeleton key={index} className="h-24 rounded-[1.25rem]" />)
           ) : (
             <>
-              <MetricCard label="Prediction cards" value={predictions.length} hint="Matches currently modelled" icon={BrainCircuit} />
+              <MetricCard label="Modelled" value={predictions.length} icon={BrainCircuit} />
               <MetricCard
-                label="Avg home lean"
+                label="Home Lean"
                 value={
                   predictions.length
                     ? `${Math.round(
                         predictions.reduce(
-                          (sum, item) => sum + (item.prediction.home_win ?? item.prediction.homeWin ?? 0),
+                          (sum, item) => sum + (item.prediction.homeWin ?? 0),
                           0
                         ) / predictions.length
                       )}%`
                     : "0%"
                 }
-                hint="Average home win projection"
                 icon={TrendingUp}
               />
-              <MetricCard label="Scenario engine" value="Active" hint="Predictions driven by the tactical engine layer" icon={WandSparkles} />
+              <MetricCard label="Scenario" value="Active" icon={WandSparkles} tone="highlight" />
             </>
           )}
         </div>
 
-        <Card className="border-border/60">
-          <CardHeader>
-            <CardTitle className="text-xl">Prediction Board</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {loading
-              ? Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-[1.5rem]" />)
-              : predictions.map((item) => (
-                  <div key={item.match_id} className="rounded-[1.5rem] border border-border/60 p-5">
-                    <div className="text-xl font-semibold">{item.match_label}</div>
-                    <div className="mt-2 text-sm text-muted-foreground">{item.prediction.verdict}</div>
-                    <div className="mt-4 grid grid-cols-3 gap-3">
-                      <div className="rounded-2xl bg-muted/30 px-4 py-4 text-center">
-                        <div className="text-2xl font-black">{item.prediction.home_win ?? item.prediction.homeWin ?? 0}%</div>
-                        <div className="text-sm text-muted-foreground">Home win</div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {loading
+            ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-[1.75rem]" />)
+            : predictions.map((item) => (
+                  <Card key={item.matchId} className="rounded-[2rem] border-white/5 bg-[#0A0C10] overflow-hidden group hover:border-primary/30 transition-all">
+                    <CardHeader className="p-6 pb-2">
+                       <div className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 mb-1">Neural Outcome Framing</div>
+                       <CardTitle className="text-xl font-black">{item.matchLabel}</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-6 space-y-6">
+                      <p className="text-xs font-medium leading-relaxed text-white/60 italic line-clamp-2">
+                        "{item.prediction.verdict}"
+                      </p>
+                      
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { label: 'HOME', val: item.prediction.homeWin ?? 0, color: 'text-primary' },
+                          { label: 'DRAW', val: item.prediction.draw ?? 0, color: 'text-white/40' },
+                          { label: 'AWAY', val: item.prediction.awayWin ?? 0, color: 'text-blue-400' }
+                        ].map(prob => (
+                          <div key={prob.label} className="bg-white/5 rounded-2xl p-3 text-center border border-white/5">
+                            <div className={`text-xl font-black ${prob.color}`}>{prob.val}%</div>
+                            <div className="text-[8px] font-bold text-white/20 uppercase tracking-widest mt-1">{prob.label}</div>
+                          </div>
+                        ))}
                       </div>
-                      <div className="rounded-2xl bg-muted/30 px-4 py-4 text-center">
-                        <div className="text-2xl font-black">{item.prediction.draw}%</div>
-                        <div className="text-sm text-muted-foreground">Draw</div>
-                      </div>
-                      <div className="rounded-2xl bg-muted/30 px-4 py-4 text-center">
-                        <div className="text-2xl font-black">{item.prediction.away_win ?? item.prediction.awayWin ?? 0}%</div>
-                        <div className="text-sm text-muted-foreground">Away win</div>
-                      </div>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 ))}
-          </CardContent>
-        </Card>
+        </div>
       </div>
     </MainLayout>
   );

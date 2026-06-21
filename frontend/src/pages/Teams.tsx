@@ -18,92 +18,78 @@ export default function Teams() {
 
   return (
     <MainLayout>
-      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-6">
         <PageHero
           eyebrow="Teams"
-          title="Club structure, squad depth, and team-level strength in one intelligence module."
-          description="This page combines normalized team profiles, recent form, squad status, and manager context so we can move from scoreboard reading into operational football decisions."
+          title="Club structure and squad depth."
+          description="Operational football decisions derived from normalized team profiles and squad status."
           badge={`${teams.length} clubs in focus`}
         />
 
         {error ? (
           <Card className="border-destructive/30">
-            <CardContent className="py-8 text-sm text-destructive">{error}</CardContent>
+            <CardContent className="py-4 text-sm text-destructive">{error}</CardContent>
           </Card>
         ) : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {loading
-            ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-80 rounded-[1.75rem]" />)
+            ? Array.from({ length: 6 }).map((_, index) => <Skeleton key={index} className="h-64 rounded-[2rem]" />)
             : teams.map((entry) => (
-                <Card key={entry.team.id} className="rounded-[1.75rem] border-border/60">
-                  <CardHeader className="flex-row items-start justify-between gap-4 space-y-0">
-                    <div>
-                      <CardTitle className="text-xl">{entry.team.name}</CardTitle>
-                      <div className="mt-2 text-sm text-muted-foreground">{String(entry.team.league?.name ?? "Competition pending")}</div>
+                <Card key={entry.team.id} className="rounded-[2rem] border-white/5 bg-[#0A0C10] overflow-hidden group hover:border-primary/30 transition-all">
+                  <CardHeader className="p-6 pb-2">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <CardTitle className="text-xl font-black">{entry.team.name}</CardTitle>
+                        <div className="text-xs font-medium text-white/40">{String(entry.team.league?.name ?? "Premier League")}</div>
+                      </div>
+                      <Badge className="bg-primary/10 text-primary border-primary/20 rounded-lg">
+                        {entry.team.manager?.name || "Coach"}
+                      </Badge>
                     </div>
-                    <Badge variant="outline">{entry.team.manager?.name ?? "Coach pending"}</Badge>
                   </CardHeader>
-                  <CardContent className="space-y-5">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl bg-muted/30 p-4">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          <Users className="h-3.5 w-3.5" />
-                          Squad
-                        </div>
-                        <div className="mt-2 text-2xl font-black">{Number(entry.squadSummary.totalPlayers ?? entry.squad_summary.total_players ?? 0)}</div>
+                  <CardContent className="p-6 space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-xl bg-white/5 border border-white/5 p-3">
+                        <div className="text-[8px] font-black uppercase tracking-[0.2em] text-white/20">Squad Size</div>
+                        <div className="mt-1 text-2xl font-black text-white">{Number(entry.squadSummary.totalPlayers ?? 0)}</div>
                       </div>
-                      <div className="rounded-2xl bg-muted/30 p-4">
-                        <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                          Defence
-                        </div>
-                        <div className="mt-2 text-2xl font-black">{Number(entry.stats.defenseStrength ?? entry.stats.defense_strength ?? 0).toFixed(2)}</div>
+                      <div className="rounded-xl bg-white/5 border border-white/5 p-3">
+                        <div className="text-[8px] font-black uppercase tracking-[0.2em] text-white/20">Defense Strength</div>
+                        <div className="mt-1 text-2xl font-black text-emerald-400">{Number(entry.stats.defenseStrength ?? 0).toFixed(1)}</div>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-3 text-sm">
-                      <div className="rounded-2xl border border-border/60 p-3">
-                        <div className="text-muted-foreground">Attack</div>
-                        <div className="mt-1 text-lg font-semibold">{Number(entry.stats.attackStrength ?? entry.stats.attack_strength ?? 0).toFixed(2)}</div>
-                      </div>
-                      <div className="rounded-2xl border border-border/60 p-3">
-                        <div className="text-muted-foreground">PPM</div>
-                        <div className="mt-1 text-lg font-semibold">{Number(entry.stats.pointsPerMatch ?? entry.stats.points_per_match ?? 0).toFixed(2)}</div>
-                      </div>
-                      <div className="rounded-2xl border border-border/60 p-3">
-                        <div className="text-muted-foreground">Possession</div>
-                        <div className="mt-1 text-lg font-semibold">{Number(entry.stats.estimatedPossessionTrend ?? entry.stats.estimated_possession_trend ?? 50).toFixed(0)}%</div>
-                      </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: 'ATTACK', val: Number(entry.stats.attackStrength ?? 0).toFixed(1) },
+                        { label: 'PPM', val: Number(entry.stats.pointsPerMatch ?? 0).toFixed(2) },
+                        { label: 'POSS', val: `${Number(entry.stats.estimatedPossessionTrend ?? 50).toFixed(0)}%` }
+                      ].map(stat => (
+                        <div key={stat.label} className="bg-white/5 rounded-xl p-2 text-center border border-white/5">
+                          <div className="text-[8px] font-black text-white/20 uppercase tracking-widest">{stat.label}</div>
+                          <div className="text-xs font-bold text-white">{stat.val}</div>
+                        </div>
+                      ))}
                     </div>
 
-                    <div className="rounded-2xl bg-slate-950 p-4 text-white">
-                      <div className="text-xs uppercase tracking-[0.2em] text-emerald-200">Form</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
+                    <div className="rounded-2xl bg-slate-950 p-4 border border-white/5">
+                      <div className="text-[9px] font-black uppercase tracking-[0.2em] text-primary mb-2">Form Sequence</div>
+                      <div className="flex flex-wrap gap-1.5">
                         {(entry.recentForm.form ?? []).map((result, index) => (
                           <span
-                            key={`${entry.team.id}-${index}`}
-                            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            key={index}
+                            className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-black ${
                               result === "W"
-                                ? "bg-emerald-400/20 text-emerald-100"
+                                ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                                 : result === "L"
-                                ? "bg-rose-400/20 text-rose-100"
-                                : "bg-white/10 text-white"
+                                ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                                : "bg-white/5 text-white/60 border border-white/10"
                             }`}
                           >
                             {result}
                           </span>
                         ))}
-                      </div>
-                    </div>
-
-                    <div className="text-sm text-muted-foreground">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="h-4 w-4 text-primary" />
-                        {entry.team.venue ?? "Venue pending"}
-                      </div>
-                      <div className="mt-2">
-                        High-risk availability flags: {Number(entry.squadSummary.highRisk ?? entry.squad_summary.high_risk ?? 0)}
                       </div>
                     </div>
                   </CardContent>

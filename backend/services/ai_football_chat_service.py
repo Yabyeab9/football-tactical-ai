@@ -72,72 +72,49 @@ class AIFootballChatService:
         return context
 
     async def _call_openai(self, message: str, context: dict[str, Any], conversation: list[dict[str, str]]) -> str:
-        prompt = (
-            "You are an elite football manager analyst. Answer with tactical clarity, practical coaching language, "
-            "and explain the football reasons behind each recommendation. Use only the provided context.\n\n"
-            f"Structured context:\n{context}\n\n"
-            f"User question:\n{message}"
+        system_prompt = (
+            "You are an elite football tactical analyst and performance director. "
+            "Your tone is professional, high-signal, and grounded in tactical principles. "
+            "Use terms like 'rest-defense', 'half-spaces', 'low-block', 'counter-press', and 'transition-risk'. "
+            "Analyze the provided context and answer the user's question with precise coaching insights."
         )
-        input_items = [
-            {"role": item.get("role", "user"), "content": [{"type": "input_text", "text": item.get("content", "")}]}
-            for item in conversation[-6:]
-        ]
-        input_items.append({"role": "user", "content": [{"type": "input_text", "text": prompt}]})
-
+        
+        messages = [{"role": "system", "content": system_prompt}]
+        for item in conversation[-6:]:
+            messages.append({"role": item.get("role", "user"), "content": item.get("content", "")})
+        
+        prompt = f"Context:\n{context}\n\nQuestion: {message}"
+        messages.append({"role": "user", "content": prompt})
 
         logger = logging.getLogger(__name__)
 
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             try:
                 response = await client.post(
-                    "https://api.openai.com/v1/responses",
+                    "https://api.openai.com/v1/chat/completions",
                     headers={
                         "Authorization": f"Bearer {settings.openai_api_key}",
                         "Content-Type": "application/json",
                     },
                     json={
                         "model": settings.openai_model,
-                        "input": input_items,
-                        "max_output_tokens": 500,
+                        "messages": messages,
+                        "temperature": 0.7,
+                        "max_tokens": 800,
                     },
                 )
 
-                # Parse JSON safely (even for errors)
                 payload = response.json()
 
-                # 🔴 Handle non-200 responses properly
                 if response.status_code != 200:
                     logger.error(f"OpenAI API error ({response.status_code}): {payload}")
+                    return "Intelligence link interrupted. Falling back to local heuristic modeling."
 
-                    return {
-                        "error": payload.get("error", {}).get("code", "unknown_error"),
-                        "message": payload.get("error", {}).get("message", "OpenAI request failed"),
-                        "status_code": response.status_code,
-                    }
-
-                return self._extract_openai_text(payload)
-
-            except httpx.TimeoutException:
-                logger.error("OpenAI request timed out")
-                return {"error": "timeout"}
-
-            except httpx.RequestError as e:
-                logger.error(f"OpenAI request failed: {str(e)}")
-                return {"error": "request_failed", "message": str(e)}
+                return payload["choices"][0]["message"]["content"]
 
             except Exception as e:
-                logger.exception("Unexpected OpenAI error")
-                return {"error": "unknown_exception", "message": str(e)}
-
-    def _extract_openai_text(self, payload: dict[str, Any]) -> str:
-        if payload.get("output_text"):
-            return payload["output_text"]
-        for output in payload.get("output", []):
-            for content in output.get("content", []):
-                text = content.get("text")
-                if text:
-                    return text
-        return "The assistant could not generate a reply from the provided context."
+                logger.error(f"OpenAI request failed: {str(e)}")
+                return "Intelligence link timeout. Tactical fallback active."
 
     def _build_local_reply(self, message: str, context: dict[str, Any]) -> str:
         tactical = context.get("tactical", {}).get("data", {})
@@ -149,33 +126,28 @@ class AIFootballChatService:
 
         if tactical:
             return (
-                f"{tactical['prediction']} "
-                f"Primary strength: {tactical['team_analysis']['strengths'][0]} "
-                f"Main tactical risk: {tactical['team_analysis']['weaknesses'][0]} "
-                f"I would protect rest defence, keep the key playmaker available between the lines, and attack the opponent's weaker transition side."
+                f"Tactical Inference: {tactical['prediction']}. "
+                f"We detect a strength in {tactical['analysis']['strengths'][0]} but a critical risk in {tactical['analysis']['weaknesses'][0]}. "
+                "Recommendation: Protect the central transition corridor and maintain a compact rest-defense structure. "
+                "Exploit the opponent's tendency for slow recovery in the half-spaces."
             )
         if player:
             analytics = player["analytics"]
             return (
-                f"{player['player']['name']} profiles as a {analytics['roleProfile']['primaryRole']}. "
-                f"The form index is {analytics.get('formIndex', 0)}, the performance rating is {analytics.get('performanceRating', 0)}, "
-                f"and the clearest coaching question is how to preserve output without overloading minutes."
+                f"Performance Profile: {player['player']['name']} is operating as a {analytics['roleProfile']['primaryRole']}. "
+                f"Output Density: {analytics.get('goalContributionsPer90', 0)} G+A/90. "
+                f"Operational Status: Availability rate at {analytics.get('availabilityRate', 0)}%. "
+                "Coaching Note: Sustain current output by managing minutes in high-congestion windows."
             )
         if team and manager:
             style = manager["manager"]["tacticalStyle"]
-            stats = team["stats"]
             return (
-                f"{manager['manager']['name']} is steering {team['team']['name']} with a {style['label'].lower()} approach. "
-                f"Attack strength is {stats.get('attackStrength', 0)}, defense strength is {stats.get('defenseStrength', 0)}, "
-                f"and the current tactical story is {style['summary']}"
+                f"Strategic Overview: {manager['manager']['name']} is implementing a {style['label'].lower()} model at {team['team']['name']}. "
+                f"Narrative: {style['summary']} "
+                f"Tactical Traits: {', '.join(style['traits'])}. "
+                "Systemic Outlook: Team is currently optimized for structural control but remains vulnerable to direct vertical threats."
             )
-        if history:
-            trends = history["trends"]
-            return (
-                f"The recent form string is {''.join(trends.get('form', [])) or 'mixed'}. "
-                f"They are averaging {trends.get('pointsPerMatch', 0)} points per match, so the coaching focus should be margin control and better shot quality."
-            )
-        return "Give me a match, team, or player and I’ll respond like a football manager analyst with tactics, usage, risk, and prediction context."
+        return "Tactical Assistant ready. Specify a match, player, or team to receive a deep intelligence briefing."
 
     def _context_summary(self, context: dict[str, Any]) -> dict[str, Any]:
         summary: dict[str, Any] = {"modules": list(context.keys())}

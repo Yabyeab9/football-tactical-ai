@@ -21,12 +21,25 @@ class EventOutcome(str, Enum):
     UNCERTAIN = "uncertain"
 
 
-class PitchCoordinate(BaseModel):
+def to_camel(string: str) -> str:
+    components = string.split('_')
+    return components[0] + ''.join(x.title() for x in components[1:])
+
+
+class BaseSchema(BaseModel):
+    model_config = {
+        "alias_generator": to_camel,
+        "populate_by_name": True,
+        "from_attributes": True
+    }
+
+
+class PitchCoordinate(BaseSchema):
     x: float = Field(..., ge=0, le=100)
     y: float = Field(..., ge=0, le=100)
 
 
-class Team(BaseModel):
+class Team(BaseSchema):
     id: str
     name: str
     short_name: str
@@ -40,52 +53,51 @@ class Team(BaseModel):
     created_at: datetime
 
 
-class Player(BaseModel):
+class Player(BaseSchema):
     id: str
     name: str
     position: str
-    squad_number: Optional[int]
-    nationality: Optional[str]
-    height_cm: Optional[float]
-    weight_kg: Optional[float]
-    dominant_foot: Optional[str]
+    squad_number: Optional[int] = None
+    nationality: Optional[str] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    dominant_foot: Optional[str] = None
     role: str
-    market_value: Optional[float]
+    market_value: Optional[float] = None
     current_team_id: str
     created_at: datetime
 
 
-class Match(BaseModel):
+class Match(BaseSchema):
     id: str
     competition: str
     season: str
-    venue: Optional[str]
+    venue: Optional[str] = None
     kickoff_utc: datetime
     home_team_id: str
     away_team_id: str
     home_score: int
     away_score: int
     status: MatchStatus
-    minute: Optional[int]
-    attendance: Optional[int]
+    minute: Optional[int] = None
+    attendance: Optional[int] = None
     created_at: datetime
 
     @validator('kickoff_utc')
     def validate_kickoff(cls, v):
-        # Handle dual-calendar if needed, but for now, assume UTC
         return v
 
 
-class Lineup(BaseModel):
+class Lineup(BaseSchema):
     match_id: str
     team_id: str
     players: List[Player]
     formation: str
-    captain_id: Optional[str]
-    coach: Optional[str]
+    captain_id: Optional[str] = None
+    coach: Optional[str] = None
 
 
-class LiveEvent(BaseModel):
+class LiveEvent(BaseSchema):
     id: str
     match_id: str
     event_index: int
@@ -93,40 +105,40 @@ class LiveEvent(BaseModel):
     minute: int
     second: int
     type: str
-    subtype: Optional[str]
+    subtype: Optional[str] = None
     team_id: str
-    player_id: Optional[str]
-    target_player_id: Optional[str]
-    location: Optional[PitchCoordinate]
-    end_location: Optional[PitchCoordinate]
+    player_id: Optional[str] = None
+    target_player_id: Optional[str] = None
+    location: Optional[PitchCoordinate] = None
+    end_location: Optional[PitchCoordinate] = None
     outcome: EventOutcome
-    xg: Optional[float]
-    xt: Optional[float]
-    ppda: Optional[float]
-    pass_length: Optional[float]
-    pass_angle: Optional[float]
-    pass_height: Optional[str]
-    pass_type: Optional[str]
-    carry_distance: Optional[float]
+    xg: Optional[float] = None
+    xt: Optional[float] = None
+    ppda: Optional[float] = None
+    pass_length: Optional[float] = None
+    pass_angle: Optional[float] = None
+    pass_height: Optional[str] = None
+    pass_type: Optional[str] = None
+    carry_distance: Optional[float] = None
     under_pressure: bool
     created_at: datetime
 
 
-class TacticalFrame(BaseModel):
+class TacticalFrame(BaseSchema):
     match_id: str
     frame_index: int
     timestamp: datetime
     period: int
     minute: int
     second: int
-    home_team_positions: List[Dict[str, Any]]  # Player positions with IDs
+    home_team_positions: List[Dict[str, Any]]
     away_team_positions: List[Dict[str, Any]]
-    ball_position: Optional[PitchCoordinate]
-    possession_team_id: Optional[str]
+    ball_position: Optional[PitchCoordinate] = None
+    possession_team_id: Optional[str] = None
     created_at: datetime
 
 
-class PlayerStats(BaseModel):
+class PlayerStats(BaseSchema):
     player_id: str
     match_id: str
     minutes_played: int
@@ -148,21 +160,20 @@ class PlayerStats(BaseModel):
     created_at: datetime
 
 
-# Analytics Models
-class PitchControlCell(BaseModel):
+class PitchControlCell(BaseSchema):
     x: float
     y: float
     control_probability: float
-    controlling_team_id: Optional[str]
+    controlling_team_id: Optional[str] = None
 
 
-class ThreatFlowPoint(BaseModel):
+class ThreatFlowPoint(BaseSchema):
     minute: int
     xt_value: float
     possession_team_id: str
 
 
-class PassNetworkNode(BaseModel):
+class PassNetworkNode(BaseSchema):
     player_id: str
     name: str
     role: str
@@ -175,15 +186,19 @@ class PassNetworkNode(BaseModel):
     betweenness: float
 
 
-class PassNetworkEdge(BaseModel):
+class PassNetworkEdge(BaseSchema):
     source: str
     target: str
     weight: int
     success_rate: float
     combined_actions: int
+    source_x: Optional[float] = None
+    source_y: Optional[float] = None
+    target_x: Optional[float] = None
+    target_y: Optional[float] = None
 
 
-class PressingZone(BaseModel):
+class PressingZone(BaseSchema):
     zone_id: str
     x: float
     y: float
@@ -191,7 +206,7 @@ class PressingZone(BaseModel):
     turnovers: int
 
 
-class PredictionResult(BaseModel):
+class PredictionResult(BaseSchema):
     match_id: str
     home_win_probability: float
     draw_probability: float
@@ -201,14 +216,14 @@ class PredictionResult(BaseModel):
     updated_at: datetime
 
 
-class TacticalSummary(BaseModel):
+class TacticalSummary(BaseSchema):
     match_id: str
     summary: str
     key_insights: List[str]
     generated_at: datetime
 
 
-class SearchResult(BaseModel):
+class SearchResult(BaseSchema):
     match_id: str
     relevance_score: float
     tactical_style: str

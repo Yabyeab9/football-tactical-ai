@@ -99,12 +99,16 @@ class AnalyticsService:
             if event.player_id and event.target_player_id:
                 # Update nodes
                 if event.player_id not in nodes:
-                    nodes[event.player_id] = {"passes_completed": 0, "passes_received": 0}
+                    nodes[event.player_id] = {"passes_completed": 0, "passes_received": 0, "x_sum": 0, "y_sum": 0}
                 if event.target_player_id not in nodes:
-                    nodes[event.target_player_id] = {"passes_completed": 0, "passes_received": 0}
+                    nodes[event.target_player_id] = {"passes_completed": 0, "passes_received": 0, "x_sum": 0, "y_sum": 0}
 
                 nodes[event.player_id]["passes_completed"] += 1
                 nodes[event.target_player_id]["passes_received"] += 1
+                
+                if event.location:
+                    nodes[event.player_id]["x_sum"] += event.location.x
+                    nodes[event.player_id]["y_sum"] += event.location.y
 
                 # Update edges
                 edge_key = (event.player_id, event.target_player_id)
@@ -113,32 +117,46 @@ class AnalyticsService:
                 edges[edge_key]["weight"] += 1
                 edges[edge_key]["success"] += 1
 
-        # Calculate centrality (simplified)
+        # Calculate centrality and positions
         network_nodes = []
+        node_lookup = {}
         for player_id, stats in nodes.items():
-            network_nodes.append(PassNetworkNode(
+            count = max(1, stats["passes_completed"])
+            avg_x = stats["x_sum"] / count if stats["x_sum"] > 0 else 50.0
+            avg_y = stats["y_sum"] / count if stats["y_sum"] > 0 else 50.0
+            
+            node = PassNetworkNode(
                 player_id=player_id,
-                name=f"Player {player_id}",  # Fetch name from data
+                name=f"Player {player_id}",
                 role="Unknown",
                 team_id=team_id,
                 passes_received=stats["passes_received"],
                 passes_completed=stats["passes_completed"],
-                x=50, y=50,  # Placeholder
+                x=avg_x, y=avg_y,
                 degree_centrality=stats["passes_completed"] / len(nodes) if nodes else 0,
-                betweenness=0.0  # Simplified
-            ))
+                betweenness=0.0
+            )
+            network_nodes.append(node)
+            node_lookup[player_id] = node
 
         network_edges = []
         for (source, target), stats in edges.items():
+            src_node = node_lookup.get(source)
+            tgt_node = node_lookup.get(target)
+            
             network_edges.append(PassNetworkEdge(
                 source=source,
                 target=target,
                 weight=stats["weight"],
                 success_rate=stats["success"] / stats["weight"],
-                combined_actions=stats["weight"]
+                combined_actions=stats["weight"],
+                source_x=src_node.x if src_node else 50.0,
+                source_y=src_node.y if src_node else 50.0,
+                target_x=tgt_node.x if tgt_node else 50.0,
+                target_y=tgt_node.y if tgt_node else 50.0
             ))
 
-        result = {"nodes": network_nodes, "edges": network_edges}
+        result = {"nodes": [n.dict(by_alias=True) for n in network_nodes], "edges": [e.dict(by_alias=True) for e in network_edges]}
         await write_cache(cache_key, result, settings.analytics_cache_ttl_seconds)
         return result
 
